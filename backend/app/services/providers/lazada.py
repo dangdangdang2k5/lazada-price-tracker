@@ -137,49 +137,23 @@ class LazadaPriceProvider(BasePriceProvider):
         original_price: Optional[int] = None
         image_url: Optional[str] = None
 
-        # Strategy 1: JSON-LD structured data (<script type="application/ld+json">)
-        ld_json_scripts = soup.find_all("script", type="application/ld+json")
-        for script in ld_json_scripts:
-            try:
-                if not script.string:
-                    continue
-                ld_data = json.loads(script.string.strip())
-                if isinstance(ld_data, list):
-                    items = ld_data
-                else:
-                    items = [ld_data]
-
-                for item in items:
-                    if isinstance(item, dict) and item.get("@type") == "Product":
-                        name = name or item.get("name")
-                        image_url = image_url or (item.get("image")[0] if isinstance(item.get("image"), list) else item.get("image"))
-                        offers = item.get("offers")
-                        if isinstance(offers, dict):
-                            p = offers.get("price") or offers.get("lowPrice")
-                            if p:
-                                price = parse_currency(str(p))
-                        elif isinstance(offers, list) and len(offers) > 0:
-                            p = offers[0].get("price") or offers[0].get("lowPrice")
-                            if p:
-                                price = parse_currency(str(p))
-            except Exception:
-                pass
-
-        # Strategy 2: Extract from Lazada window.__INIT_DATA__ / app state in script tags
+        # Strategy 1: Extract from Lazada window.__INIT_DATA__ / pdpData / app state in script tags (Accurate Sale Price)
         scripts = soup.find_all("script")
         for script in scripts:
             script_text = script.string or ""
             if any(k in script_text for k in ["__INIT_DATA__", "app.config", "pdpData", "pageData", "pdpImpression", "skuInfos"]):
-                # Look for price in embedded JSON object
+                # Look for coupon & salePrice first
                 if not price:
                     price_patterns = [
+                        r'"coupon"\s*:\s*\{\s*"priceNumber"\s*:\s*([\d\.]+)',
                         r'"salePrice"\s*:\s*\{\s*"value"\s*:\s*([\d\.]+)',
-                        r'"price"\s*:\s*\{\s*"value"\s*:\s*([\d\.]+)',
+                        r'"discountPrice"\s*:\s*\{\s*"value"\s*:\s*([\d\.]+)',
                         r'"salePrice"\s*:\s*"?([0-9.,]+)"?',
-                        r'"price"\s*:\s*"?([0-9.,]+)"?',
                         r'"discountPrice"\s*:\s*"?([0-9.,]+)"?',
                         r'"priceShow"\s*:\s*"₫?\s*([0-9.,]+)"',
                         r'"priceText"\s*:\s*"₫?\s*([0-9.,]+)"',
+                        r'"price"\s*:\s*\{\s*"value"\s*:\s*([\d\.]+)',
+                        r'"price"\s*:\s*"?([0-9.,]+)"?',
                     ]
                     for pat in price_patterns:
                         m = re.search(pat, script_text)
@@ -216,7 +190,7 @@ class LazadaPriceProvider(BasePriceProvider):
                 if not image_url and image_match:
                     image_url = image_match.group(1)
 
-        # Strategy 2.5: Extract from pdpTrackingData / dataLayer tracking scripts
+        # Strategy 2: Extract from pdpTrackingData / dataLayer tracking scripts
         if not price or not name or not image_url:
             pdt_price_match = re.search(r'pdt_price(?:\\*)["\']\s*:\s*(?:\\*)["\']([^\\"\']*)', html)
             if not price and pdt_price_match:
@@ -229,6 +203,31 @@ class LazadaPriceProvider(BasePriceProvider):
             pdt_photo_match = re.search(r'pdt_photo(?:\\*)["\']\s*:\s*(?:\\*)["\']([^\\"\']*)', html)
             if not image_url and pdt_photo_match:
                 image_url = pdt_photo_match.group(1).strip()
+
+        # Strategy 3: JSON-LD structured data (Fallback)
+        if not price:
+            ld_json_scripts = soup.find_all("script", type="application/ld+json")
+            for script in ld_json_scripts:
+                try:
+                    if not script.string:
+                        continue
+                    ld_data = json.loads(script.string.strip())
+                    items = ld_data if isinstance(ld_data, list) else [ld_data]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("@type") == "Product":
+                            name = name or item.get("name")
+                            image_url = image_url or (item.get("image")[0] if isinstance(item.get("image"), list) else item.get("image"))
+                            offers = item.get("offers")
+                            if isinstance(offers, dict):
+                                p = offers.get("price") or offers.get("lowPrice")
+                                if p:
+                                    price = parse_currency(str(p))
+                            elif isinstance(offers, list) and len(offers) > 0:
+                                p = offers[0].get("price") or offers[0].get("lowPrice")
+                                if p:
+                                    price = parse_currency(str(p))
+                except Exception:
+                    pass
 
         # Strategy 3: Meta tags OpenGraph / Twitter Cards
         if not name:
@@ -296,7 +295,6 @@ class LazadaPriceProvider(BasePriceProvider):
 
         captured_mtop: Optional[str] = None
         page_title: Optional[str] = None
-        rendered_html: Optional[str] = None
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -331,39 +329,37 @@ class LazadaPriceProvider(BasePriceProvider):
 
             page = await context.new_page()
             captured_list = []
+            mtop_event = asyncio.Event()
 
             async def on_response(response):
                 req_url = response.url.lower()
                 if "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
                     try:
                         text = await response.text()
-                        if len(text) > 500:
+                        if "skuInfos" in text or "module" in text:
                             captured_list.append(text)
+                            mtop_event.set()
                     except Exception:
                         pass
 
             page.on("response", on_response)
 
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                # Small scroll down to trigger dynamic network requests
-                await page.evaluate("window.scrollBy(0, 350)")
+                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                await page.evaluate("window.scrollBy(0, 300)")
             except Exception:
                 pass
 
-            for _ in range(30):
-                if any("module" in t or "skuInfos" in t for t in captured_list):
-                    break
-                await asyncio.sleep(0.3)
+            try:
+                await asyncio.wait_for(mtop_event.wait(), timeout=12.0)
+            except asyncio.TimeoutError:
+                pass
 
-            for t in captured_list:
-                if "module" in t or "skuInfos" in t:
-                    captured_mtop = t
-                    break
+            if captured_list:
+                captured_mtop = captured_list[0]
 
             try:
                 page_title = await page.title()
-                rendered_html = await page.content()
             except Exception:
                 pass
 
@@ -371,19 +367,13 @@ class LazadaPriceProvider(BasePriceProvider):
 
         if captured_mtop:
             parsed = self._parse_mtop_detail(captured_mtop, url, target_sku_id, fallback_title=page_title)
-            if parsed:
+            if parsed and parsed.price > 0:
                 logger.info(f"[PW] Parsed success! Price: {parsed.price}, Orig: {parsed.original_price}")
                 return parsed
             else:
                 logger.warning("[PW] Failed to parse captured mtop.")
 
-        if rendered_html and "sec.lazada.vn" not in rendered_html:
-            parsed_dom = self._parse_html(rendered_html, url)
-            if parsed_dom and parsed_dom.price > 0:
-                logger.info(f"[PW-DOM] Parsed price from rendered DOM: {parsed_dom.price}")
-                return parsed_dom
-
-        logger.warning(f"[PW] No mtop or DOM price captured for {url}")
+        logger.warning(f"[PW] No dynamic mtop price captured for {url}")
         return None
 
     def _parse_mtop_detail(self, mtop_text: str, url: str, target_sku_id: Optional[str], fallback_title: Optional[str] = None) -> Optional[ProductScrapedData]:
