@@ -1,19 +1,5 @@
 [
   {
-    "id": 2,
-    "name": "AULA S75PRO Bàn phím cơ 75 phím 3 chế độ có dây không dây Bluetooth RGB ánh sáng nhiều màu cho game thủ và làm việc",
-    "url": "https://s.lazada.vn/s.o8iXa?c=d&t=p-iEZIgKu-s23N5sUb",
-    "target_price": 700000,
-    "last_price": 3257000,
-    "last_checked": null,
-    "history": [
-      {
-        "price": 1005300,
-        "timestamp": ""
-      }
-    ]
-  },
-  {
     "id": 3,
     "name": "AULA F75 75 Phím Bàn Phím Cơ Không Dây RGB Đèn Nền 3 Chế Độ Bluetooth Có Dây Gaming cho PC Laptop",
     "sku_id": "116886611258",
@@ -60,6 +46,57 @@
     "history": [
       {
         "price": 837000,
+        "timestamp": ""
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "AULA | Bàn Phím Cơ F75 Không Dây 3 Chế Độ, Gasket Mount, Hotswap, Layout 75% Có Núm Xoay",
+    "sku_id": "16055633473",
+    "sku_name": "Cloud Blue - Trục máy gặt",
+    "note": null,
+    "url": "https://www.lazada.vn/products/aula-ban-phim-co-f75-khong-day-3-che-do-gasket-mount-hotswap-layout-75-co-num-xoay-i3300646509-s16055633473.html?",
+    "target_price": 200000,
+    "last_price": 937800,
+    "last_checked": null,
+    "history": [
+      {
+        "price": 937800,
+        "timestamp": ""
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "AULA | Bàn Phím Cơ F75 Không Dây 3 Chế Độ, Gasket Mount, Hotswap, Layout 75% Có Núm Xoay",
+    "sku_id": "16055633478",
+    "sku_name": "Trục máy gặt mèo nhỏ",
+    "note": null,
+    "url": "https://www.lazada.vn/products/aula-ban-phim-co-f75-khong-day-3-che-do-gasket-mount-hotswap-layout-75-co-num-xoay-i3300646509-s16055633478.html?",
+    "target_price": 100000,
+    "last_price": 933300,
+    "last_checked": null,
+    "history": [
+      {
+        "price": 933300,
+        "timestamp": ""
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "AULA | Bàn Phím Cơ F75 Không Dây 3 Chế Độ, Gasket Mount, Hotswap, Layout 75% Có Núm Xoay",
+    "sku_id": "16055633468",
+    "sku_name": "Snow Fir Green - Trục máy gặt",
+    "note": null,
+    "url": "https://www.lazada.vn/products/aula-ban-phim-co-f75-khong-day-3-che-do-gasket-mount-hotswap-layout-75-co-num-xoay-i3300646509-s16055633468.html?",
+    "target_price": 12321,
+    "last_price": 549200,
+    "last_checked": null,
+    "history": [
+      {
+        "price": 549200,
         "timestamp": ""
       }
     ]
