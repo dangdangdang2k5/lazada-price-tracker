@@ -380,45 +380,139 @@ class LazadaPriceProvider(BasePriceProvider):
             if name and " | Lazada" in name:
                 name = name.split(" | Lazada")[0].strip()
 
-            # SKUs
             sku_infos = mod.get("skuInfos", {})
-            sku_data = None
+            po = mod.get("productOption", {})
+            sku_base = po.get("skuBase", {})
 
-            if target_sku_id and target_sku_id in sku_infos:
-                sku_data = sku_infos[target_sku_id]
-            elif "0" in sku_infos:
-                sku_data = sku_infos["0"]
-            elif sku_infos:
-                sku_data = list(sku_infos.values())[0]
+            # Map property vid -> readable variation name
+            vid_map = {}
+            for prop in sku_base.get("properties", []):
+                pid = prop.get("pid")
+                for val in prop.get("values", []):
+                    vid = str(val.get("vid"))
+                    vname = val.get("name")
+                    vid_map[f"{pid}:{vid}"] = vname
+                    vid_map[vid] = vname
 
-            final_price = 0
-            orig_price = 0
-            image_url = None
+            # Extract all variations
+            variations = []
+            skus_list = sku_base.get("skus", [])
+            
+            if skus_list:
+                for sku_item in skus_list:
+                    sid = str(sku_item.get("skuId"))
+                    proppath = sku_item.get("propPath", "")
+                    page_path = sku_item.get("pagePath", "")
+                    
+                    prop_parts = proppath.split(";")
+                    names = []
+                    for part in prop_parts:
+                        if part in vid_map:
+                            names.append(vid_map[part])
+                        elif ":" in part and part.split(":")[1] in vid_map:
+                            names.append(vid_map[part.split(":")[1]])
+                    var_name = " / ".join(names) if names else f"Phân loại #{sid}"
 
-            if sku_data:
+                    sinfo = sku_infos.get(sid, {})
+                    p_obj = sinfo.get("price", {})
+                    coupon = p_obj.get("coupon", {})
+                    sale_p = p_obj.get("salePrice", {})
+                    orig_p = p_obj.get("originalPrice", {})
+
+                    price = 0
+                    if coupon and coupon.get("priceNumber"):
+                        price = int(coupon["priceNumber"])
+                    elif sale_p and sale_p.get("value"):
+                        price = int(sale_p["value"])
+
+                    orig_price = int(orig_p.get("value", 0)) if orig_p else 0
+                    img = sinfo.get("image") or sku_item.get("image")
+                    full_url = ("https://www.lazada.vn" + page_path) if page_path else url
+
+                    if price > 0:
+                        variations.append({
+                            "sku_id": sid,
+                            "name": var_name,
+                            "price": price,
+                            "original_price": orig_price if orig_price > price else None,
+                            "image": img,
+                            "url": full_url
+                        })
+            else:
+                # Fallback: iterate over sku_infos directly
+                for sid, sinfo in sku_infos.items():
+                    if sid == "0" and len(sku_infos) > 1:
+                        continue
+                    p_obj = sinfo.get("price", {})
+                    coupon = p_obj.get("coupon", {})
+                    sale_p = p_obj.get("salePrice", {})
+                    orig_p = p_obj.get("originalPrice", {})
+
+                    price = 0
+                    if coupon and coupon.get("priceNumber"):
+                        price = int(coupon["priceNumber"])
+                    elif sale_p and sale_p.get("value"):
+                        price = int(sale_p["value"])
+
+                    orig_price = int(orig_p.get("value", 0)) if orig_p else 0
+                    img = sinfo.get("image")
+                    
+                    dlayer = sinfo.get("dataLayer", {})
+                    var_name = dlayer.get("sku_name") or f"Phân loại #{sid}"
+
+                    if price > 0:
+                        variations.append({
+                            "sku_id": str(sid),
+                            "name": var_name,
+                            "price": price,
+                            "original_price": orig_price if orig_price > price else None,
+                            "image": img,
+                            "url": url
+                        })
+
+            # Pick target SKU or default
+            chosen_var = None
+            if target_sku_id:
+                for v in variations:
+                    if str(v["sku_id"]) == str(target_sku_id):
+                        chosen_var = v
+                        break
+
+            if not chosen_var and variations:
+                chosen_var = variations[0]
+
+            final_price = chosen_var["price"] if chosen_var else 0
+            orig_price = chosen_var.get("original_price") if chosen_var else None
+            image_url = chosen_var.get("image") if chosen_var else None
+            sku_name = chosen_var.get("name") if chosen_var else None
+            sku_id = chosen_var.get("sku_id") if chosen_var else target_sku_id
+            target_url = (chosen_var.get("url") if chosen_var and chosen_var.get("url") else url)
+
+            # Fallback if no variations but single sku_data
+            if final_price <= 0 and sku_infos:
+                sku_data = sku_infos.get(target_sku_id) or sku_infos.get("0") or list(sku_infos.values())[0]
                 p_obj = sku_data.get("price", {})
                 coupon = p_obj.get("coupon", {})
                 sale_p = p_obj.get("salePrice", {})
                 orig_p = p_obj.get("originalPrice", {})
-
-                # Priority 1: Coupon / Flash Sale promo price
                 if coupon and coupon.get("priceNumber"):
                     final_price = int(coupon["priceNumber"])
                 elif sale_p and sale_p.get("value"):
                     final_price = int(sale_p["value"])
-
                 if orig_p and orig_p.get("value"):
                     orig_price = int(orig_p["value"])
-
                 image_url = sku_data.get("image")
 
             if final_price > 0:
                 return ProductScrapedData(
                     name=name or "Lazada Product",
                     price=final_price,
-                    original_price=orig_price if orig_price > final_price else None,
+                    original_price=orig_price if (orig_price and orig_price > final_price) else None,
+                    sku_id=sku_id,
+                    sku_name=sku_name,
                     image_url=image_url,
-                    url=url,
+                    url=target_url,
+                    variations=variations,
                     success=True
                 )
         except Exception as e:

@@ -7,8 +7,12 @@ class ProductScrapedData(BaseModel):
     name: str = Field(..., description="Product title")
     price: int = Field(..., description="Current promotional / selling price in VND")
     original_price: Optional[int] = Field(None, description="Original list price before discount in VND")
+    sku_id: Optional[str] = Field(None, description="Specific SKU/Variation ID")
+    sku_name: Optional[str] = Field(None, description="Name/attributes of specific variation")
     image_url: Optional[str] = Field(None, description="Main product image URL")
     url: str = Field(..., description="Canonical product URL")
+    variations: list = Field(default_factory=list, description="List of product variations/SKUs")
+    note: Optional[str] = Field(None, description="User note for this product")
     success: bool = True
     error_message: Optional[str] = None
 

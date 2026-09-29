@@ -84,8 +84,16 @@ async def check_products_round(provider: LazadaPriceProvider, products: list, bo
             msg = (
                 f"🔥 <b>CẢNH BÁO GIÁ LAZADA!</b>\n\n"
                 f"📦 <b>Sản phẩm:</b> {product_name}\n"
-                f"💵 <b>Giá mới:</b> <code>{format_currency(current_price)}</code>{change_pct}\n"
             )
+            sku_name = item.get("sku_name") or res.sku_name
+            if sku_name:
+                msg += f"🏷️ <b>Phân loại:</b> {sku_name}\n"
+
+            note = item.get("note")
+            if note:
+                msg += f"📝 <b>Ghi chú:</b> <i>{note}</i>\n"
+
+            msg += f"💵 <b>Giá mới:</b> <code>{format_currency(current_price)}</code>{change_pct}\n"
             if old_price > 0:
                 msg += f"📉 <b>Giá cũ:</b> <s>{format_currency(old_price)}</s>\n"
             if target_price > 0:
@@ -97,6 +105,8 @@ async def check_products_round(provider: LazadaPriceProvider, products: list, bo
 
         # Update product data
         item["name"] = product_name
+        if res.sku_name and not item.get("sku_name"):
+            item["sku_name"] = res.sku_name
         item["last_price"] = current_price
         item["last_checked"] = now_iso
         if "history" not in item:
