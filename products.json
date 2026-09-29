@@ -7,5 +7,19 @@
     "last_price": 0,
     "last_checked": null,
     "history": []
+  },
+  {
+    "id": 2,
+    "name": "AULA F75 75 Phím Bàn Phím Cơ Không Dây RGB Đèn Nền 3 Chế Độ Bluetooth Có Dây Gaming cho PC Laptop",
+    "url": "https://www.lazada.vn/products/aula-f75-75-phim-ban-phim-co-khong-day-rgb-den-nen-3-che-do-bluetooth-co-day-gaming-cho-pc-laptop-i13362527375-s116886611256.html",
+    "target_price": 300000,
+    "last_price": 4357000,
+    "last_checked": null,
+    "history": [
+      {
+        "price": 4357000,
+        "timestamp": ""
+      }
+    ]
   }
 ]
