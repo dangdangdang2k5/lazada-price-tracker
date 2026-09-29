@@ -296,6 +296,7 @@ class LazadaPriceProvider(BasePriceProvider):
 
         captured_mtop: Optional[str] = None
         page_title: Optional[str] = None
+        rendered_html: Optional[str] = None
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -303,16 +304,32 @@ class LazadaPriceProvider(BasePriceProvider):
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
-                    "--disable-setuid-sandbox"
+                    "--disable-setuid-sandbox",
+                    "--disable-infobars",
+                    "--window-size=1366,768"
                 ]
             )
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
                 locale="vi-VN",
-                viewport={"width": 1280, "height": 800}
+                viewport={"width": 1366, "height": 768},
+                extra_http_headers={
+                    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Sec-Ch-Ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+                    "Sec-Ch-Ua-Mobile": "?0",
+                    "Sec-Ch-Ua-Platform": '"Windows"',
+                }
             )
-            page = await context.new_page()
 
+            # Anti-detection stealth scripts
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['vi-VN', 'vi', 'en-US', 'en'] });
+            """)
+
+            page = await context.new_page()
             captured_list = []
 
             async def on_response(response):
@@ -320,7 +337,7 @@ class LazadaPriceProvider(BasePriceProvider):
                 if "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
                     try:
                         text = await response.text()
-                        if len(text) > 1000:
+                        if len(text) > 500:
                             captured_list.append(text)
                     except Exception:
                         pass
@@ -328,11 +345,13 @@ class LazadaPriceProvider(BasePriceProvider):
             page.on("response", on_response)
 
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                # Small scroll down to trigger dynamic network requests
+                await page.evaluate("window.scrollBy(0, 350)")
             except Exception:
                 pass
 
-            for _ in range(25):
+            for _ in range(30):
                 if any("module" in t or "skuInfos" in t for t in captured_list):
                     break
                 await asyncio.sleep(0.3)
@@ -344,8 +363,10 @@ class LazadaPriceProvider(BasePriceProvider):
 
             try:
                 page_title = await page.title()
+                rendered_html = await page.content()
             except Exception:
                 pass
+
             await browser.close()
 
         if captured_mtop:
@@ -356,7 +377,13 @@ class LazadaPriceProvider(BasePriceProvider):
             else:
                 logger.warning("[PW] Failed to parse captured mtop.")
 
-        logger.warning(f"[PW] No mtop captured for {url}")
+        if rendered_html and "sec.lazada.vn" not in rendered_html:
+            parsed_dom = self._parse_html(rendered_html, url)
+            if parsed_dom and parsed_dom.price > 0:
+                logger.info(f"[PW-DOM] Parsed price from rendered DOM: {parsed_dom.price}")
+                return parsed_dom
+
+        logger.warning(f"[PW] No mtop or DOM price captured for {url}")
         return None
 
     def _parse_mtop_detail(self, mtop_text: str, url: str, target_sku_id: Optional[str], fallback_title: Optional[str] = None) -> Optional[ProductScrapedData]:
