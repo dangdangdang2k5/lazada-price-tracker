@@ -195,3 +195,5 @@ Nếu phương thức crawl HTML hiện tại bị hạn chế, bạn có thể 
    Nếu có tài khoản đối tác Lazada Affiliate / Developer, bạn có thể đăng ký API key và triển khai `LazadaOfficialApiProvider` mà không cần sửa bất kỳ dòng code database hay alert nào.
 3. **Mở rộng sang các sàn khác**:
    Dễ dàng bổ sung `ShopeePriceProvider`, `TikTokShopPriceProvider` thông qua `backend/app/services/providers/factory.py`.
+#   l a z a d a - p r i c e - t r a c k e r  
+ 
