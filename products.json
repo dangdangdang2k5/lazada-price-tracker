@@ -1,24 +1,10 @@
 [
   {
-    "id": 1,
-    "name": "AULA F75 75 Phím Bàn Phím Cơ Không Dây RGB Đèn Nền 3 Chế Độ Bluetooth Có Dây Gaming cho PC Laptop",
-    "url": "https://s.lazada.vn/s.oRyk1?c=d&t=p-iEaJnn5-s23aOJ9U",
-    "target_price": 700000,
-    "last_price": 733500,
-    "last_checked": null,
-    "history": [
-      {
-        "price": 733500,
-        "timestamp": ""
-      }
-    ]
-  },
-  {
     "id": 2,
     "name": "AULA S75PRO Bàn phím cơ 75 phím 3 chế độ có dây không dây Bluetooth RGB ánh sáng nhiều màu cho game thủ và làm việc",
     "url": "https://s.lazada.vn/s.o8iXa?c=d&t=p-iEZIgKu-s23N5sUb",
     "target_price": 700000,
-    "last_price": 1005300,
+    "last_price": 3257000,
     "last_checked": null,
     "history": [
       {
@@ -40,6 +26,23 @@
     "history": [
       {
         "price": 1880000,
+        "timestamp": ""
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "AULA S75PRO Bàn phím cơ 75 phím 3 chế độ có dây không dây Bluetooth RGB ánh sáng nhiều màu cho game thủ và làm việc",
+    "sku_id": "116690126504",
+    "sku_name": "Bàn phím cơ ba chế độ không dây Quiet White [Trục Caramel Latte]",
+    "note": "test tele",
+    "url": "https://www.lazada.vn/products/aula-s75pro-ban-phim-co-75-phim-3-che-do-co-day-khong-day-bluetooth-rgb-anh-sang-nhieu-mau-cho-game-thu-va-lam-viec-i13347484056-s116690126504.html?c=liveUpStart",
+    "target_price": 200000,
+    "last_price": 1005300,
+    "last_checked": null,
+    "history": [
+      {
+        "price": 1005300,
         "timestamp": ""
       }
     ]
