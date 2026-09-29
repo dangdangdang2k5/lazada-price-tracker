@@ -38,20 +38,35 @@ class LazadaPriceProvider(BasePriceProvider):
                 error_message="Invalid or unsupported Lazada product URL"
             )
 
+        target_url = canonical_url
+
+        # If it's a Lazada short link (s.lazada.vn), resolve it to the full authenticated product URL with laz_token
+        if "s.lazada" in canonical_url:
+            short_html = await self._fetch_html(canonical_url)
+            if short_html:
+                target_url_match = (
+                    re.search(r'var\s+REDIRECTURL\s*=\s*new\s+URL\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)', short_html) or
+                    re.search(r'<link\s+rel=[\'"]origin[\'"]\s+href=[\'"]([^\'"]+)[\'"]', short_html, re.IGNORECASE) or
+                    re.search(r'<link\s+rel=[\'"]canonical[\'"]\s+href=[\'"]([^\'"]+)[\'"]', short_html, re.IGNORECASE)
+                )
+                if target_url_match and "products" in target_url_match.group(1):
+                    target_url = normalize_lazada_url(target_url_match.group(1))
+                    logger.info(f"[CRAWLER] Short link resolved: {canonical_url} -> {target_url}")
+
         # Extract SKU ID from URL (e.g. -s116886611256.html)
-        sku_match = re.search(r'-s(\d+)\.html', url)
+        sku_match = re.search(r'-s(\d+)\.html', target_url) or re.search(r'-s(\d+)\.html', url)
         target_sku_id = sku_match.group(1) if sku_match else None
 
         # Strategy 1: High accuracy Playwright dynamic mtop extraction (captures flash sale & voucher prices)
         try:
-            pw_data = await self._fetch_with_playwright(url, target_sku_id)
+            pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
             if pw_data and pw_data.price > 0:
                 logger.info(f"[CRAWLER] Successfully extracted real-time sale price via Playwright: {pw_data.price} VND (Original: {pw_data.original_price})")
                 return pw_data
         except Exception as pw_err:
             logger.warning(f"[CRAWLER] Playwright dynamic fetch skipped or failed: {pw_err}. Falling back to HTTP HTML parsing.")
 
-        html_content = await self._fetch_html(canonical_url)
+        html_content = await self._fetch_html(target_url)
         if not html_content:
             return ProductScrapedData(
                 name="Unknown Product",
@@ -293,7 +308,12 @@ class LazadaPriceProvider(BasePriceProvider):
         except ImportError:
             return None
 
+        # Extract Item ID if present in the URL
+        m_item = re.search(r'-i(\d+)', url) or re.search(r'i(\d+)', url)
+        item_id = m_item.group(1) if m_item else None
+
         captured_mtop: Optional[str] = None
+        captured_catalog_json: Optional[Dict[str, Any]] = None
         page_title: Optional[str] = None
 
         async with async_playwright() as p:
@@ -308,32 +328,27 @@ class LazadaPriceProvider(BasePriceProvider):
                 ]
             )
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                 locale="vi-VN",
                 viewport={"width": 1366, "height": 768},
-                extra_http_headers={
-                    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Sec-Ch-Ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
-                    "Sec-Ch-Ua-Mobile": "?0",
-                    "Sec-Ch-Ua-Platform": '"Windows"',
-                }
             )
-
-            # Anti-detection stealth scripts
-            await context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-                Object.defineProperty(navigator, 'languages', { get: () => ['vi-VN', 'vi', 'en-US', 'en'] });
-            """)
 
             page = await context.new_page()
             captured_list = []
             mtop_event = asyncio.Event()
 
             async def on_response(response):
+                nonlocal captured_catalog_json
                 req_url = response.url.lower()
-                if "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
+                if "catalog" in req_url and "ajax=true" in req_url:
+                    try:
+                        data = await response.json()
+                        if data and "mods" in data:
+                            captured_catalog_json = data
+                            mtop_event.set()
+                    except Exception:
+                        pass
+                elif "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
                     try:
                         text = await response.text()
                         if "skuInfos" in text or "module" in text:
@@ -344,16 +359,30 @@ class LazadaPriceProvider(BasePriceProvider):
 
             page.on("response", on_response)
 
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                await page.evaluate("window.scrollBy(0, 300)")
-            except Exception:
-                pass
+            # High-priority bypass strategy: Query Lazada Catalog via Item ID
+            # This completely avoids Alibaba sufei-punish WAF while delivering accurate sale & promo prices
+            if item_id:
+                search_url = f"https://www.lazada.vn/catalog/?q={item_id}"
+                try:
+                    await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
+                    try:
+                        await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
+                    except asyncio.TimeoutError:
+                        pass
+                except Exception as e:
+                    logger.warning(f"[PW] Catalog search error for {item_id}: {e}")
 
-            try:
-                await asyncio.wait_for(mtop_event.wait(), timeout=12.0)
-            except asyncio.TimeoutError:
-                pass
+            # If catalog search didn't yield result, try direct PDP navigation
+            if not captured_catalog_json and not captured_list:
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    await page.evaluate("window.scrollBy(0, 300)")
+                    try:
+                        await asyncio.wait_for(mtop_event.wait(), timeout=8.0)
+                    except asyncio.TimeoutError:
+                        pass
+                except Exception:
+                    pass
 
             if captured_list:
                 captured_mtop = captured_list[0]
@@ -365,15 +394,53 @@ class LazadaPriceProvider(BasePriceProvider):
 
             await browser.close()
 
+        # Priority 1: Parse dynamic MTOP if captured
         if captured_mtop:
             parsed = self._parse_mtop_detail(captured_mtop, url, target_sku_id, fallback_title=page_title)
             if parsed and parsed.price > 0:
-                logger.info(f"[PW] Parsed success! Price: {parsed.price}, Orig: {parsed.original_price}")
+                logger.info(f"[PW] Dynamic MTOP parsed successfully: {parsed.price} VND (Orig: {parsed.original_price})")
                 return parsed
-            else:
-                logger.warning("[PW] Failed to parse captured mtop.")
 
-        logger.warning(f"[PW] No dynamic mtop price captured for {url}")
+        # Priority 2: Parse Catalog Search AJAX JSON (Resilient & fast)
+        if captured_catalog_json:
+            mods = captured_catalog_json.get("mods", {})
+            list_items = mods.get("listItems", [])
+            for it in list_items:
+                if not item_id or str(it.get("itemId")) == str(item_id) or len(list_items) == 1:
+                    price_val = 0
+                    raw_price = it.get("price")
+                    if raw_price:
+                        try:
+                            price_val = int(float(raw_price))
+                        except Exception:
+                            pass
+                    if price_val <= 0 and it.get("priceShow"):
+                        price_val = parse_currency(it.get("priceShow")) or 0
+
+                    orig_val = None
+                    raw_orig = it.get("originalPrice")
+                    if raw_orig:
+                        try:
+                            orig_val = int(float(raw_orig))
+                            if orig_val <= price_val:
+                                orig_val = None
+                        except Exception:
+                            pass
+
+                    if price_val > 0:
+                        prod_name = it.get("name") or page_title or "Lazada Product"
+                        logger.info(f"[PW] Catalog AJAX parsed successfully: {prod_name[:40]} -> {price_val} VND")
+                        return ProductScrapedData(
+                            name=prod_name,
+                            price=price_val,
+                            original_price=orig_val,
+                            image_url=it.get("image"),
+                            sku_id=target_sku_id,
+                            url=url,
+                            success=True
+                        )
+
+        logger.warning(f"[PW] No dynamic mtop or catalog price captured for {url}")
         return None
 
     def _parse_mtop_detail(self, mtop_text: str, url: str, target_sku_id: Optional[str], fallback_title: Optional[str] = None) -> Optional[ProductScrapedData]:

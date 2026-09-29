@@ -36,7 +36,7 @@ def is_valid_lazada_url(url: str) -> bool:
 
 def normalize_lazada_url(url: str) -> str:
     """
-    Clean tracking queries (e.g., spm, search, clickTrackInfo) from Lazada URL to keep it canonical.
+    Clean tracking queries from Lazada URL while preserving essential share tokens.
     """
     if not url or not isinstance(url, str):
         return ""
@@ -46,7 +46,10 @@ def normalize_lazada_url(url: str) -> str:
         # For short link domain s.lazada.vn, preserve full URL including query params
         if "s.lazada" in parsed.netloc:
             return url
-        # Keep scheme, netloc, path, and discard tracking queries unless needed
+        # If URL contains legitimate share tokens, preserve them to avoid anti-bot trigger
+        if "laz_token" in parsed.query or "laz_share_info" in parsed.query:
+            return url
+        # Otherwise keep clean canonical URL
         return urlunparse((parsed.scheme or "https", parsed.netloc, parsed.path, "", "", ""))
     except Exception:
         return url

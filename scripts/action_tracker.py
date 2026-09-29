@@ -5,6 +5,9 @@ import asyncio
 from datetime import datetime
 import httpx
 
+from dotenv import load_dotenv
+load_dotenv()
+
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -73,16 +76,26 @@ async def check_products_round(provider: LazadaPriceProvider, products: list, bo
 
         # Check conditions
         price_dropped = old_price > 0 and current_price < old_price
+        price_increased = old_price > 0 and current_price > old_price
         target_hit = target_price > 0 and current_price <= target_price
+        first_tracking = old_price == 0
 
-        if price_dropped or target_hit:
-            change_pct = ""
-            if old_price > 0 and current_price < old_price:
+        should_alert = price_dropped or price_increased or target_hit or first_tracking
+
+        if should_alert:
+            if target_hit:
+                header = "🎯 <b>ĐÃ ĐẠT GIÁ MỤC TIÊU!</b>"
+            elif price_dropped:
                 pct = round(((old_price - current_price) / old_price) * 100, 1)
-                change_pct = f" (Giảm {pct}%)"
+                header = f"🔥 <b>GIÁ ĐÃ GIẢM {pct}%!</b>"
+            elif price_increased:
+                pct = round(((current_price - old_price) / old_price) * 100, 1)
+                header = f"📈 <b>GIÁ ĐÃ TĂNG (+{pct}%)!</b>"
+            else:
+                header = "🚀 <b>BẮT ĐẦU THEO DÕI SẢN PHẨM MỚI</b>"
 
             msg = (
-                f"🔥 <b>CẢNH BÁO GIÁ LAZADA!</b>\n\n"
+                f"{header}\n\n"
                 f"📦 <b>Sản phẩm:</b> {product_name}\n"
             )
             sku_name = item.get("sku_name") or res.sku_name
@@ -93,9 +106,9 @@ async def check_products_round(provider: LazadaPriceProvider, products: list, bo
             if note:
                 msg += f"📝 <b>Ghi chú:</b> <i>{note}</i>\n"
 
-            msg += f"💵 <b>Giá mới:</b> <code>{format_currency(current_price)}</code>{change_pct}\n"
+            msg += f"💵 <b>Giá hiện tại:</b> <code>{format_currency(current_price)}</code>\n"
             if old_price > 0:
-                msg += f"📉 <b>Giá cũ:</b> <s>{format_currency(old_price)}</s>\n"
+                msg += f"📊 <b>Giá trước đó:</b> <s>{format_currency(old_price)}</s>\n"
             if target_price > 0:
                 msg += f"🎯 <b>Mục tiêu:</b> <code>{format_currency(target_price)}</code>\n"
 
