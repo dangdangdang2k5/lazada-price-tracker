@@ -12,3 +12,5 @@ aiosqlite>=0.20.0
 pytest>=8.1.1
 pytest-asyncio>=0.23.6
 python-multipart>=0.0.9
+playwright>=1.42.0
+customtkinter>=6.0.0

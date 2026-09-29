@@ -1,5 +1,6 @@
 import json
 import re
+import asyncio
 from typing import Optional, Dict, Any, List
 import httpx
 from bs4 import BeautifulSoup
@@ -36,6 +37,19 @@ class LazadaPriceProvider(BasePriceProvider):
                 success=False,
                 error_message="Invalid or unsupported Lazada product URL"
             )
+
+        # Extract SKU ID from URL (e.g. -s116886611256.html)
+        sku_match = re.search(r'-s(\d+)\.html', url)
+        target_sku_id = sku_match.group(1) if sku_match else None
+
+        # Strategy 1: High accuracy Playwright dynamic mtop extraction (captures flash sale & voucher prices)
+        try:
+            pw_data = await self._fetch_with_playwright(url, target_sku_id)
+            if pw_data and pw_data.price > 0:
+                logger.info(f"[CRAWLER] Successfully extracted real-time sale price via Playwright: {pw_data.price} VND (Original: {pw_data.original_price})")
+                return pw_data
+        except Exception as pw_err:
+            logger.warning(f"[CRAWLER] Playwright dynamic fetch skipped or failed: {pw_err}. Falling back to HTTP HTML parsing.")
 
         html_content = await self._fetch_html(canonical_url)
         if not html_content:
@@ -273,3 +287,141 @@ class LazadaPriceProvider(BasePriceProvider):
             url=url,
             success=True
         )
+
+    async def _fetch_with_playwright(self, url: str, target_sku_id: Optional[str] = None) -> Optional[ProductScrapedData]:
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return None
+
+        captured_mtop: Optional[str] = None
+        page_title: Optional[str] = None
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox"
+                ]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                locale="vi-VN",
+                viewport={"width": 1280, "height": 800}
+            )
+            page = await context.new_page()
+
+            captured_list = []
+
+            async def on_response(response):
+                req_url = response.url.lower()
+                if "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
+                    try:
+                        text = await response.text()
+                        if len(text) > 1000:
+                            captured_list.append(text)
+                    except Exception:
+                        pass
+
+            page.on("response", on_response)
+
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            except Exception:
+                pass
+
+            for _ in range(25):
+                if any("module" in t or "skuInfos" in t for t in captured_list):
+                    break
+                await asyncio.sleep(0.3)
+
+            for t in captured_list:
+                if "module" in t or "skuInfos" in t:
+                    captured_mtop = t
+                    break
+
+            try:
+                page_title = await page.title()
+            except Exception:
+                pass
+            await browser.close()
+
+        if captured_mtop:
+            parsed = self._parse_mtop_detail(captured_mtop, url, target_sku_id, fallback_title=page_title)
+            if parsed:
+                logger.info(f"[PW] Parsed success! Price: {parsed.price}, Orig: {parsed.original_price}")
+                return parsed
+            else:
+                logger.warning("[PW] Failed to parse captured mtop.")
+
+        logger.warning(f"[PW] No mtop captured for {url}")
+        return None
+
+    def _parse_mtop_detail(self, mtop_text: str, url: str, target_sku_id: Optional[str], fallback_title: Optional[str] = None) -> Optional[ProductScrapedData]:
+        json_match = re.search(r'(\{.*\})', mtop_text, re.DOTALL)
+        if not json_match:
+            return None
+
+        try:
+            data = json.loads(json_match.group(1))
+            raw_mod = data.get("data", {}).get("module", "{}")
+            mod = json.loads(raw_mod) if isinstance(raw_mod, str) else raw_mod
+
+            # Title
+            product_obj = mod.get("product", {})
+            name = product_obj.get("title")
+            if not name:
+                tracking = mod.get("tracking", {})
+                name = tracking.get("pdt_name") or fallback_title
+
+            # Clean name
+            if name and " | Lazada" in name:
+                name = name.split(" | Lazada")[0].strip()
+
+            # SKUs
+            sku_infos = mod.get("skuInfos", {})
+            sku_data = None
+
+            if target_sku_id and target_sku_id in sku_infos:
+                sku_data = sku_infos[target_sku_id]
+            elif "0" in sku_infos:
+                sku_data = sku_infos["0"]
+            elif sku_infos:
+                sku_data = list(sku_infos.values())[0]
+
+            final_price = 0
+            orig_price = 0
+            image_url = None
+
+            if sku_data:
+                p_obj = sku_data.get("price", {})
+                coupon = p_obj.get("coupon", {})
+                sale_p = p_obj.get("salePrice", {})
+                orig_p = p_obj.get("originalPrice", {})
+
+                # Priority 1: Coupon / Flash Sale promo price
+                if coupon and coupon.get("priceNumber"):
+                    final_price = int(coupon["priceNumber"])
+                elif sale_p and sale_p.get("value"):
+                    final_price = int(sale_p["value"])
+
+                if orig_p and orig_p.get("value"):
+                    orig_price = int(orig_p["value"])
+
+                image_url = sku_data.get("image")
+
+            if final_price > 0:
+                return ProductScrapedData(
+                    name=name or "Lazada Product",
+                    price=final_price,
+                    original_price=orig_price if orig_price > final_price else None,
+                    image_url=image_url,
+                    url=url,
+                    success=True
+                )
+        except Exception as e:
+            logger.warning(f"[CRAWLER] Error parsing mtop detail JSON: {e}")
+
+        return None
