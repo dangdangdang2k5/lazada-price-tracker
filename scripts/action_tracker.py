@@ -46,30 +46,11 @@ async def send_telegram_alert(bot_token: str, chat_id: str, message: str) -> boo
     return False
 
 
-async def main():
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-
-    if not os.path.exists(PRODUCTS_FILE):
-        print(f"[ERROR] Products file not found: {PRODUCTS_FILE}")
-        return
-
-    with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
-        try:
-            products = json.load(f)
-        except Exception as e:
-            print(f"[ERROR] Failed to read JSON: {e}")
-            return
-
-    if not products:
-        print("[INFO] No products in list. Exiting.")
-        return
-
-    provider = LazadaPriceProvider()
+async def check_products_round(provider: LazadaPriceProvider, products: list, bot_token: str, chat_id: str, round_num: int) -> bool:
     updated = False
     now_iso = datetime.utcnow().isoformat() + "Z"
-
-    print(f"[INFO] Checking {len(products)} product(s) on Lazada...")
+    print(f"\n==================== [ROUND {round_num}] STARTING PRICE CHECK ====================")
+    print(f"[INFO] Time: {datetime.now().strftime('%H:%M:%S')} - Checking {len(products)} product(s)...")
 
     for item in products:
         url = item.get("url")
@@ -93,7 +74,6 @@ async def main():
         # Check conditions
         price_dropped = old_price > 0 and current_price < old_price
         target_hit = target_price > 0 and current_price <= target_price
-        is_first_check = old_price == 0
 
         if price_dropped or target_hit:
             change_pct = ""
@@ -129,13 +109,50 @@ async def main():
         item["history"] = item["history"][-50:]
         updated = True
 
-        # Small delay between products
+        # Small polite delay between products
         await asyncio.sleep(2.0)
 
-    if updated:
+    return updated
+
+
+async def main():
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+    if not os.path.exists(PRODUCTS_FILE):
+        print(f"[ERROR] Products file not found: {PRODUCTS_FILE}")
+        return
+
+    with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
+        try:
+            products = json.load(f)
+        except Exception as e:
+            print(f"[ERROR] Failed to read JSON: {e}")
+            return
+
+    if not products:
+        print("[INFO] No products in list. Exiting.")
+        return
+
+    provider = LazadaPriceProvider()
+
+    # ROUND 1 (At minute 0:00)
+    updated_1 = await check_products_round(provider, products, bot_token, chat_id, round_num=1)
+
+    # Sleep 140 seconds (~2.3 minutes) before Round 2
+    SLEEP_SECONDS = 140
+    print(f"\n[SLEEP] Waiting {SLEEP_SECONDS} seconds (~2.3 mins) for Round 2...")
+    await asyncio.sleep(SLEEP_SECONDS)
+
+    # ROUND 2 (At minute 2:30)
+    updated_2 = await check_products_round(provider, products, bot_token, chat_id, round_num=2)
+
+    if updated_1 or updated_2:
         with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
         print("\n[SUCCESS] Updated products.json with new price data.")
+    
+    print("\n[COMPLETE] 2-Round check completed successfully.")
 
 
 if __name__ == "__main__":
