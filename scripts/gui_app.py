@@ -614,6 +614,7 @@ class LazadaTrackerApp(ctk.CTk):
                             p["sku_name"] = res.sku_name
                 except Exception:
                     pass
+                loop.run_until_complete(asyncio.sleep(2.0))
             self.save_products()
             loop.close()
             self.after(0, lambda: self.set_loading(False, "🟢 Đã quét xong tất cả!"))
