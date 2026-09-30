@@ -11,6 +11,6 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: PRICE_CHECK_MIN_INTERVAL_SECONDS
-        value: "240"
+        value: "120"
       - key: PRICE_CHECK_MAX_INTERVAL_SECONDS
-        value: "360"
+        value: "180"
