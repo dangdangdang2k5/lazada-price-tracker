@@ -31,6 +31,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
   const [skuId, setSkuId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [note, setNote] = useState('');
+  const [category, setCategory] = useState('');
 
   // Multi-alert selection state
   const [ruleTargetPrice, setRuleTargetPrice] = useState(true);
@@ -143,6 +144,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
         sku_id: skuId || null,
         sku_name: skuName.trim() || null,
         note: note.trim() || null,
+        category: category.trim() || null,
         image_url: previewData.image_url,
         current_price: finalPrice,
         original_price: previewData.original_price,
@@ -167,6 +169,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
     setSkuId('');
     setCustomPrice('');
     setNote('');
+    setCategory('');
     onClose();
   };
 
@@ -354,6 +357,20 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="VD: Bản màu đen switch tên sao, canh sale dưới 800k..."
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Tag className="h-3.5 w-3.5 text-purple-500" />
+                    <span>Phân loại sản phẩm</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    placeholder="VD: Bàn phím, Chuột, Phụ kiện"
                     className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   />
                 </div>

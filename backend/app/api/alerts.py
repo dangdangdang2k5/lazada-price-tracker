@@ -129,6 +129,7 @@ async def enable_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Không tìm thấy cài đặt cảnh báo")
     alert.enabled = True
+    alert.is_triggered = False
     saved = await a_repo.update(alert)
     return format_alert_response(saved)
 
@@ -146,5 +147,6 @@ async def disable_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Không tìm thấy cài đặt cảnh báo")
     alert.enabled = False
+    alert.is_triggered = False
     saved = await a_repo.update(alert)
     return format_alert_response(saved)

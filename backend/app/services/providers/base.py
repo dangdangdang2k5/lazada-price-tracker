@@ -15,6 +15,7 @@ class ProductScrapedData(BaseModel):
     note: Optional[str] = Field(None, description="User note for this product")
     success: bool = True
     error_message: Optional[str] = None
+    error_code: Optional[str] = None
 
 
 class BasePriceProvider(ABC):

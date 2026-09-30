@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+debug/lazada/
+backend/cache/lazada_cookies.json
 backend/venv/
 backend/.pytest_cache/
 backend/*.db

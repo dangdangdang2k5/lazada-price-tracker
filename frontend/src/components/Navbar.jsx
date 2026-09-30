@@ -15,6 +15,7 @@ export default function Navbar({
   toggleDarkMode, 
   onOpenAddModal, 
   onOpenTelegramModal,
+  onOpenLazadaSession,
   telegramStatus 
 }) {
   return (
@@ -70,6 +71,11 @@ export default function Navbar({
                   </>
                 )}
               </span>
+            </button>
+
+            {/* Dark Mode Toggle */}
+            <button onClick={onOpenLazadaSession} className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800" title="Cập nhật cookie/session Lazada local">
+              Session Lazada
             </button>
 
             {/* Dark Mode Toggle */}

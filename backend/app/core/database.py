@@ -50,3 +50,8 @@ async def init_db() -> None:
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if "sqlite" in database_url:
+            result = await conn.exec_driver_sql("PRAGMA table_info(products)")
+            columns = {row[1] for row in result.fetchall()}
+            if "category" not in columns:
+                await conn.exec_driver_sql("ALTER TABLE products ADD COLUMN category VARCHAR(100)")

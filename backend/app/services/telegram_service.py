@@ -1,4 +1,5 @@
 import datetime
+import html
 from typing import Optional, Dict, Any, List
 import httpx
 from app.core.config import settings
@@ -132,9 +133,10 @@ class TelegramService:
             header = "🚨 <b>LAZADA PRICE ALERT</b>"
             diff_display = "⚖️ <b>Không đổi</b>"
 
+        safe_product_name = html.escape(product_name)
         reasons_text = ""
         if trigger_reasons:
-            reasons_text = "\n".join([f"✨ <i>{r}</i>" for r in trigger_reasons])
+            reasons_text = "\n".join([f"✨ <i>{html.escape(r)}</i>" for r in trigger_reasons])
 
         target_display = ""
         if target_price:
@@ -144,7 +146,7 @@ class TelegramService:
 
         message = (
             f"{header}\n\n"
-            f"📦 <b>{product_name}</b>\n\n"
+            f"📦 <b>{safe_product_name}</b>\n\n"
             f"💰 <b>Giá cũ:</b> {format_currency(old_price)}\n"
             f"🔥 <b>Giá mới:</b> {format_currency(new_price)}\n"
             f"{diff_display}\n"

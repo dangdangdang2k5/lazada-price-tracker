@@ -100,6 +100,13 @@ export default function ProductCard({
               </span>
             </div>
           )}
+          {product.category && (
+            <div className="mb-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+                {product.category}
+              </span>
+            </div>
+          )}
           {product.note && (
             <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2 line-clamp-1">
               📝 {product.note}

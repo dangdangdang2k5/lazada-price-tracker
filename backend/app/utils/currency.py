@@ -36,3 +36,6 @@ def parse_currency(value_str: Optional[str]) -> Optional[int]:
         return val if val > 0 else None
     except ValueError:
         return None
+
+
+parseVndPrice = parse_currency

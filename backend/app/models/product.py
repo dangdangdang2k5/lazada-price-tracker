@@ -13,6 +13,7 @@ class Product(Base):
     sku_id = Column(String(100), nullable=True)
     sku_name = Column(String(255), nullable=True)
     note = Column(Text, nullable=True)
+    category = Column(String(100), nullable=True, index=True)
     image_url = Column(Text, nullable=True)
     current_price = Column(Integer, nullable=False, default=0)
     original_price = Column(Integer, nullable=True)

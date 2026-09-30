@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "Lazada Price Tracker"
     DEBUG: bool = True
+    LAZADA_DEBUG: bool = False
     DATABASE_URL: str = "sqlite+aiosqlite:///./lazada_tracker.db"
     
     # Telegram credentials
@@ -29,6 +30,16 @@ class Settings(BaseSettings):
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, v):
+        # Existing deployments use DEBUG=release/development as a mode name.
+        if isinstance(v, str) and v.lower() in {"release", "production", "prod", "false", "0"}:
+            return False
+        if isinstance(v, str) and v.lower() in {"development", "dev", "true", "1"}:
+            return True
+        return v
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

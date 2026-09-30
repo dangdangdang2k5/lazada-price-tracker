@@ -16,6 +16,7 @@ import ProductCard from '../components/ProductCard';
 import ProductModal from '../components/ProductModal';
 import ProductDetailModal from '../components/ProductDetailModal';
 import TelegramTestModal from '../components/TelegramTestModal';
+import LazadaSessionModal from '../components/LazadaSessionModal';
 import Toast from '../components/Toast';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { productService, statsService, telegramService } from '../services/api';
@@ -37,6 +38,7 @@ export default function Dashboard() {
   // Modals
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isTelegramOpen, setIsTelegramOpen] = useState(false);
+  const [isLazadaSessionOpen, setIsLazadaSessionOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
@@ -143,6 +145,7 @@ export default function Dashboard() {
         onOpenAddModal={() => setIsAddOpen(true)}
         onOpenTelegramModal={() => setIsTelegramOpen(true)}
         telegramStatus={telegramStatus}
+        onOpenLazadaSession={() => setIsLazadaSessionOpen(true)}
       />
 
       {/* Main Container */}
@@ -299,6 +302,11 @@ export default function Dashboard() {
         telegramStatus={telegramStatus}
         onTested={loadData}
       />
+
+      {isLazadaSessionOpen && <LazadaSessionModal
+        onClose={() => setIsLazadaSessionOpen(false)}
+        onSaved={() => showToast('Đã lưu Lazada session local.')}
+      />}
 
       {/* Toast Notification */}
       <Toast toast={toast} onClose={() => setToast(null)} />

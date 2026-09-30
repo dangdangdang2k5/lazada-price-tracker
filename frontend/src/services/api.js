@@ -110,4 +110,10 @@ export const statsService = {
   },
 };
 
+export const lazadaSessionService = {
+  status: async () => (await api.get('/lazada/session')).data,
+  save: async (cookies) => (await api.post('/lazada/session', { cookies })).data,
+  clear: async () => (await api.delete('/lazada/session')).data,
+};
+
 export default api;

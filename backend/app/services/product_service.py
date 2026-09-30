@@ -20,6 +20,13 @@ from app.services.telegram_service import telegram_service
 from app.utils.currency import format_currency
 from app.utils.validators import normalize_lazada_url, is_valid_lazada_url
 
+lazada_session_alerted = False
+
+
+def reset_lazada_session_alert() -> None:
+    global lazada_session_alerted
+    lazada_session_alerted = False
+
 
 class ProductService:
     def __init__(self, session: AsyncSession):
@@ -106,6 +113,7 @@ class ProductService:
             sku_id=sku_id,
             sku_name=sku_name,
             note=data.note,
+            category=data.category,
             image_url=image_url,
             current_price=price,
             original_price=original_price,
@@ -202,6 +210,14 @@ class ProductService:
         scraped = await provider.get_product_info(product.url)
 
         if not scraped.success or scraped.price <= 0:
+            global lazada_session_alerted
+            if scraped.error_code == "ANTI_BOT_CHALLENGE" and not lazada_session_alerted:
+                lazada_session_alerted = True
+                await telegram_service.send_message(
+                    "⚠️ <b>Lazada session cần cập nhật</b>\n\n"
+                    "Cookie/session Lazada đã hết hạn hoặc bị yêu cầu xác minh.\n"
+                    "Mở giao diện local → Session Lazada để cập nhật cookie mới."
+                )
             logger.warning(f"[REFRESH] Could not update price for product ID {product.id}: {scraped.error_message}")
             return self._format_product_response(product)
 
@@ -249,7 +265,7 @@ class ProductService:
 
         # Send Telegram notification if alerts triggered
         if eval_result.should_notify and telegram_service.is_configured():
-            await telegram_service.send_product_alert(
+            sent = await telegram_service.send_product_alert(
                 product_name=product.name,
                 product_url=product.url,
                 old_price=old_price,
@@ -258,6 +274,12 @@ class ProductService:
                 trigger_reasons=eval_result.reasons,
                 image_url=product.image_url
             )
+            if not sent:
+                # Do not permanently consume an alert when Telegram rejects
+                # the message or is temporarily unavailable; retry next cycle.
+                for alert in alerts:
+                    if alert.alert_type == AlertType.TARGET_PRICE.value and product.current_price <= (alert.target_price or 0):
+                        alert.is_triggered = False
 
         return self._format_product_response(product)
 
@@ -306,6 +328,7 @@ class ProductService:
             sku_id=product.sku_id,
             sku_name=product.sku_name,
             note=product.note,
+            category=product.category,
             image_url=product.image_url,
             current_price=product.current_price,
             original_price=product.original_price,

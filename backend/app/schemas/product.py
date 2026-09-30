@@ -13,6 +13,7 @@ class ProductCreate(ProductBase):
     sku_id: Optional[str] = None
     sku_name: Optional[str] = None
     note: Optional[str] = None
+    category: Optional[str] = None
     image_url: Optional[str] = None
     current_price: Optional[int] = None
     original_price: Optional[int] = None
@@ -38,6 +39,7 @@ class ProductPreviewResponse(BaseModel):
     formatted_original_price: Optional[str] = None
     success: bool = True
     error_message: Optional[str] = None
+    error: Optional[str] = None
 
 
 class ProductResponse(BaseModel):
@@ -47,6 +49,7 @@ class ProductResponse(BaseModel):
     sku_id: Optional[str] = None
     sku_name: Optional[str] = None
     note: Optional[str] = None
+    category: Optional[str] = None
     image_url: Optional[str] = None
     current_price: int
     original_price: Optional[int] = None

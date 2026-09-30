@@ -1,6 +1,8 @@
 import json
 import re
 import asyncio
+import os
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 import httpx
 from bs4 import BeautifulSoup
@@ -35,7 +37,8 @@ class LazadaPriceProvider(BasePriceProvider):
                 price=0,
                 url=canonical_url,
                 success=False,
-                error_message="Invalid or unsupported Lazada product URL"
+                error_message="Invalid or unsupported Lazada product URL",
+                error_code="PRODUCT_NOT_FOUND"
             )
 
         target_url = canonical_url
@@ -57,15 +60,6 @@ class LazadaPriceProvider(BasePriceProvider):
         sku_match = re.search(r'-s(\d+)\.html', target_url) or re.search(r'-s(\d+)\.html', url)
         target_sku_id = sku_match.group(1) if sku_match else None
 
-        # Strategy 1: High accuracy Playwright dynamic mtop extraction (captures flash sale & voucher prices)
-        try:
-            pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
-            if pw_data and pw_data.price > 0:
-                logger.info(f"[CRAWLER] Successfully extracted real-time sale price via Playwright: {pw_data.price} VND (Original: {pw_data.original_price})")
-                return pw_data
-        except Exception as pw_err:
-            logger.warning(f"[CRAWLER] Playwright dynamic fetch skipped or failed: {pw_err}. Falling back to HTTP HTML parsing.")
-
         html_content = await self._fetch_html(target_url)
         if not html_content:
             return ProductScrapedData(
@@ -73,8 +67,33 @@ class LazadaPriceProvider(BasePriceProvider):
                 price=0,
                 url=canonical_url,
                 success=False,
-                error_message="Failed to fetch product page (timeout or network error)"
+                error_message="Failed to fetch product page (timeout or network error)",
+                error_code="NETWORK_BLOCKED"
             )
+
+        response_kind = self._classify_response(html_content)
+        if response_kind == "ANTI_BOT_CHALLENGE":
+            # A saved browser session may still be able to render the product.
+            try:
+                pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
+                if pw_data and pw_data.price > 0:
+                    return pw_data
+            except Exception as pw_err:
+                logger.warning(f"[CRAWLER] Playwright session fallback failed: {pw_err}")
+            self._save_debug_response(html_content, "response.html")
+            return ProductScrapedData(name="Lazada product", price=0, url=canonical_url,
+                                      success=False, error_message="Lazada returned a captcha/security verification page",
+                                      error_code="ANTI_BOT_CHALLENGE")
+        if response_kind == "LOGIN_PAGE":
+            try:
+                pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
+                if pw_data and pw_data.price > 0:
+                    return pw_data
+            except Exception as pw_err:
+                logger.warning(f"[CRAWLER] Playwright login-session fallback failed: {pw_err}")
+            return ProductScrapedData(name="Lazada product", price=0, url=canonical_url,
+                                      success=False, error_message="Lazada returned a login page",
+                                      error_code="ANTI_BOT_CHALLENGE")
 
         # Handle Lazada short links (s.lazada.vn share bridge pages)
         target_url_match = (
@@ -91,6 +110,16 @@ class LazadaPriceProvider(BasePriceProvider):
             if target_html:
                 html_content = target_html
 
+        # If the redirected/short-link response is a challenge, give the
+        # persistent browser session one chance before returning the error.
+        if self._classify_response(html_content) == "ANTI_BOT_CHALLENGE":
+            try:
+                pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
+                if pw_data and pw_data.price > 0:
+                    return pw_data
+            except Exception as pw_err:
+                logger.warning(f"[CRAWLER] Playwright session fallback failed: {pw_err}")
+
         # Check for Lazada anti-bot / captcha challenge page
         if any(k in html_content.lower() for k in ["sec.lazada.vn", "punishpage", "x5step", "rgv5c_act", "captcha"]):
             logger.warning(f"[CRAWLER] Lazada anti-bot challenge detected for: {canonical_url}")
@@ -103,6 +132,17 @@ class LazadaPriceProvider(BasePriceProvider):
             )
 
         data = self._parse_html(html_content, canonical_url)
+        if data and data.price > 0:
+            return data
+
+        # Browser automation is a fallback after HTTP and structured parsing.
+        try:
+            pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
+            if pw_data and pw_data.price > 0:
+                return pw_data
+        except Exception as pw_err:
+            logger.warning(f"[CRAWLER] Playwright fallback failed: {pw_err}")
+        self._save_debug_response(html_content, "response.html")
         if not data or data.price <= 0:
             logger.warning(f"[CRAWLER] Could not extract valid price for: {canonical_url}")
             return ProductScrapedData(
@@ -111,10 +151,29 @@ class LazadaPriceProvider(BasePriceProvider):
                 image_url=data.image_url if data else None,
                 url=canonical_url,
                 success=False,
-                error_message="Unable to parse product price from Lazada page"
+                error_message="Unable to extract a valid current price",
+                error_code="PRICE_EXTRACTION_FAILED"
             )
 
         return data
+
+    @staticmethod
+    def _classify_response(html: str) -> Optional[str]:
+        lowered = html.lower()
+        if len(html.strip()) < 500 and "<body" not in lowered:
+            return "ANTI_BOT_CHALLENGE"
+        if any(marker in lowered for marker in ("_____tmd_____", "punish", "x5step", "rgv587", "rgv5c_act", "captcha", "security verification", "access denied", "_config_")):
+            return "ANTI_BOT_CHALLENGE"
+        if "login" in lowered and "password" in lowered:
+            return "LOGIN_PAGE"
+        return None
+
+    def _save_debug_response(self, content: str, filename: str) -> None:
+        if os.getenv("LAZADA_DEBUG", "false").lower() != "true":
+            return
+        path = Path("debug/lazada")
+        path.mkdir(parents=True, exist_ok=True)
+        (path / filename).write_text(content, encoding="utf-8", errors="replace")
 
     async def _fetch_html(self, url: str) -> Optional[str]:
         headers = {
@@ -142,6 +201,8 @@ class LazadaPriceProvider(BasePriceProvider):
                         logger.warning(f"[CRAWLER] Attempt {attempt} returned status {response.status_code} for {url}")
                 except Exception as e:
                     logger.warning(f"[CRAWLER] Attempt {attempt} failed for {url}: {str(e)}")
+                if attempt < self.retries:
+                    await asyncio.sleep(1 if attempt == 1 else 3)
         return None
 
     def _parse_html(self, html: str, url: str) -> Optional[ProductScrapedData]:
@@ -346,6 +407,28 @@ class LazadaPriceProvider(BasePriceProvider):
                 {"name": "hng", "value": "VN|vi|VND|704", "domain": ".lazada.vn", "path": "/"},
                 {"name": "country", "value": "VN", "domain": ".lazada.vn", "path": "/"}
             ])
+            cookie_file = Path(os.getenv("LAZADA_COOKIE_FILE", "cache/lazada_cookies.json"))
+            if cookie_file.exists():
+                try:
+                    saved_cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
+                    if isinstance(saved_cookies, list):
+                        playwright_cookies = []
+                        for cookie in saved_cookies:
+                            item = {key: cookie[key] for key in ("name", "value", "domain", "path", "secure", "httpOnly") if key in cookie}
+                            same_site = cookie.get("sameSite")
+                            if same_site in ("Strict", "Lax", "None"):
+                                item["sameSite"] = same_site
+                            elif same_site == "no_restriction":
+                                item["sameSite"] = "None"
+                            # Chrome exports `unspecified`; omit it and let
+                            # Playwright/browser choose the default policy.
+                            if cookie.get("expirationDate"):
+                                item["expires"] = cookie["expirationDate"]
+                            if item.get("name") and "value" in item:
+                                playwright_cookies.append(item)
+                        await context.add_cookies(playwright_cookies)
+                except Exception as cookie_err:
+                    logger.warning(f"[PW] Ignoring invalid local Lazada cookie file: {cookie_err}")
 
             await context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -392,10 +475,16 @@ class LazadaPriceProvider(BasePriceProvider):
                 except Exception as e:
                     logger.warning(f"[PW] Catalog search error for {item_id}: {e}")
 
-            # If catalog search didn't yield result, try direct PDP navigation
-            if not captured_catalog_json and not captured_list:
+            # Always visit the PDP as well. Catalog prices are item-level and
+            # can be wrong for the selected SKU; PDP/MTOP is authoritative.
+            if not captured_list:
                 try:
+                    mtop_event.clear()
                     await page.goto(url, wait_until="commit", timeout=20000)
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                    except Exception:
+                        pass
                     await page.evaluate("window.scrollBy(0, 300)")
                     try:
                         await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
