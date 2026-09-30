@@ -86,11 +86,25 @@ export default function ProductCard({
         <div>
           {/* Title */}
           <h3 
-            className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 line-clamp-2 mb-3 leading-snug group-hover:text-orange-500 transition-colors"
+            className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 line-clamp-2 mb-2 leading-snug group-hover:text-orange-500 transition-colors"
             title={product.name}
           >
             {product.name}
           </h3>
+
+          {/* SKU Variation Badge & Note */}
+          {product.sku_name && (
+            <div className="mb-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-orange-100 text-orange-800 dark:bg-orange-950/80 dark:text-orange-300 border border-orange-200 dark:border-orange-800/60">
+                🏷️ {product.sku_name}
+              </span>
+            </div>
+          )}
+          {product.note && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2 line-clamp-1">
+              📝 {product.note}
+            </p>
+          )}
 
           {/* Pricing Row */}
           <div className="mb-4">

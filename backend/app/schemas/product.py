@@ -10,6 +10,9 @@ class ProductBase(BaseModel):
 
 class ProductCreate(ProductBase):
     name: Optional[str] = None
+    sku_id: Optional[str] = None
+    sku_name: Optional[str] = None
+    note: Optional[str] = None
     image_url: Optional[str] = None
     current_price: Optional[int] = None
     original_price: Optional[int] = None
@@ -24,6 +27,9 @@ class ProductPreviewRequest(BaseModel):
 class ProductPreviewResponse(BaseModel):
     name: str
     url: str
+    sku_id: Optional[str] = None
+    sku_name: Optional[str] = None
+    variations: Optional[List[dict]] = []
     image_url: Optional[str] = None
     price: int
     original_price: Optional[int] = None
@@ -38,6 +44,9 @@ class ProductResponse(BaseModel):
     id: int
     name: str
     url: str
+    sku_id: Optional[str] = None
+    sku_name: Optional[str] = None
+    note: Optional[str] = None
     image_url: Optional[str] = None
     current_price: int
     original_price: Optional[int] = None

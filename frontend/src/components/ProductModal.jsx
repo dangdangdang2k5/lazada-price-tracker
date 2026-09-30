@@ -11,7 +11,10 @@ import {
   ArrowDownRight, 
   TrendingUp, 
   Crown,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Layers,
+  DollarSign
 } from 'lucide-react';
 import { productService } from '../services/api';
 import { formatCurrency } from '../utils/formatters';
@@ -22,6 +25,12 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
   const [previewData, setPreviewData] = useState(null);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Custom SKU, Note & Price state
+  const [skuName, setSkuName] = useState('');
+  const [skuId, setSkuId] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [note, setNote] = useState('');
 
   // Multi-alert selection state
   const [ruleTargetPrice, setRuleTargetPrice] = useState(true);
@@ -49,6 +58,9 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
       const data = await productService.preview(url.trim());
       if (data.success && data.price > 0) {
         setPreviewData(data);
+        setSkuName(data.sku_name || '');
+        setSkuId(data.sku_id || '');
+        setCustomPrice(data.price.toString());
         // Default target price = 90% of current price rounded
         setTargetPriceVal(Math.round(data.price * 0.9).toString());
       } else {
@@ -61,16 +73,29 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
     }
   };
 
+  const handleSelectVariation = (v) => {
+    setSkuName(v.name);
+    setSkuId(v.sku_id);
+    if (v.price && v.price > 0) {
+      setCustomPrice(v.price.toString());
+      setTargetPriceVal(Math.round(v.price * 0.9).toString());
+    }
+    if (v.image) {
+      setPreviewData(prev => ({ ...prev, image_url: v.image }));
+    }
+  };
+
   const handleCreateProduct = async () => {
     if (!previewData) return;
     setError(null);
     setIsSubmitting(true);
 
     try {
+      const finalPrice = parseInt(customPrice.toString().replace(/[^\d]/g, ''), 10) || previewData.price;
       const alerts = [];
 
       if (ruleTargetPrice) {
-        const val = parseInt(targetPriceVal.replace(/[^\d]/g, ''), 10);
+        const val = parseInt(targetPriceVal.toString().replace(/[^\d]/g, ''), 10);
         if (!isNaN(val) && val > 0) {
           alerts.push({
             alert_type: 'TARGET_PRICE',
@@ -115,8 +140,11 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
       const payload = {
         url: previewData.url,
         name: previewData.name,
+        sku_id: skuId || null,
+        sku_name: skuName.trim() || null,
+        note: note.trim() || null,
         image_url: previewData.image_url,
-        current_price: previewData.price,
+        current_price: finalPrice,
         original_price: previewData.original_price,
         alerts: alerts,
       };
@@ -135,12 +163,16 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
     setUrl('');
     setPreviewData(null);
     setError(null);
+    setSkuName('');
+    setSkuId('');
+    setCustomPrice('');
+    setNote('');
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[92vh] flex flex-col">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
@@ -206,7 +238,9 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
 
           {/* Step 2: Product Preview Card */}
           {previewData && (
-            <div className="space-y-5 animate-in fade-in duration-300">
+            <div className="space-y-4 animate-in fade-in duration-300">
+              
+              {/* Product summary card */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex space-x-4">
                 {previewData.image_url ? (
                   <img
@@ -225,7 +259,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
                   </h4>
                   <div className="flex items-baseline space-x-2">
                     <span className="text-lg font-black text-rose-600 dark:text-rose-400">
-                      {previewData.formatted_price}
+                      {formatCurrency(parseInt(customPrice) || previewData.price)}
                     </span>
                     {previewData.formatted_original_price && (
                       <span className="text-xs text-slate-400 line-through">
@@ -236,13 +270,103 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
                 </div>
               </div>
 
+              {/* Variations Selector if available */}
+              {previewData.variations && previewData.variations.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Layers className="h-3.5 w-3.5 text-orange-500" />
+                    <span>Chọn Phân loại / Màu sắc / Switch:</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+                    {previewData.variations.map((v) => {
+                      const isSelected = skuId === v.sku_id || skuName === v.name;
+                      return (
+                        <button
+                          key={v.sku_id}
+                          type="button"
+                          onClick={() => handleSelectVariation(v)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all text-left flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-orange-400'
+                          }`}
+                        >
+                          <span>{v.name}</span>
+                          {v.price > 0 && (
+                            <span className={`text-[10px] font-bold ${isSelected ? 'text-orange-100' : 'text-rose-500'}`}>
+                              ({formatCurrency(v.price)})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SKU Name & Price customization fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+                
+                {/* SKU Name input */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Tag className="h-3.5 w-3.5 text-orange-500" />
+                    <span>Tên phân loại (SKU)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={skuName}
+                    onChange={(e) => setSkuName(e.target.value)}
+                    placeholder="VD: S75Pro Đen Tuyệt Thế"
+                    className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+
+                {/* Current Price input */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
+                    <span>Giá hiện tại (VNĐ)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={customPrice}
+                    onChange={(e) => {
+                      setCustomPrice(e.target.value);
+                      const num = parseInt(e.target.value, 10);
+                      if (!isNaN(num) && num > 0) {
+                        setTargetPriceVal(Math.round(num * 0.9).toString());
+                      }
+                    }}
+                    placeholder="VD: 883200"
+                    className="w-full px-3 py-2 text-xs font-bold rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-rose-600 dark:text-rose-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+
+                {/* Note input */}
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5 text-indigo-500" />
+                    <span>Ghi chú riêng (Note)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="VD: Bản màu đen switch tên sao, canh sale dưới 800k..."
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+
+              </div>
+
               {/* Step 3: Configure Multi-rule Alerts */}
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
                   🔔 Chọn các điều kiện thông báo qua Telegram
                 </span>
 
-                <div className="space-y-2.5 bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                <div className="space-y-2 bg-slate-50/50 dark:bg-slate-800/30 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
                   
                   {/* Rule 1: Target price */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
@@ -261,7 +385,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
                           type="number"
                           value={targetPriceVal}
                           onChange={(e) => setTargetPriceVal(e.target.value)}
-                          placeholder="VD: 1000000"
+                          placeholder="VD: 800000"
                           className="w-32 px-2.5 py-1 text-xs font-bold text-right rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-1 focus:ring-orange-500"
                         />
                         <span className="text-xs font-bold text-slate-400">đ</span>
@@ -335,7 +459,7 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
         </div>
 
         {/* Footer actions */}
-        <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 flex items-center justify-end space-x-3">
+        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 flex items-center justify-end space-x-3">
           <button
             onClick={handleClose}
             className="px-4 py-2.5 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"

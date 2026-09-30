@@ -59,6 +59,9 @@ class ProductService:
         return ProductPreviewResponse(
             name=scraped.name,
             url=canonical_url,
+            sku_id=scraped.sku_id,
+            sku_name=scraped.sku_name,
+            variations=scraped.variations or [],
             image_url=scraped.image_url,
             price=scraped.price,
             original_price=scraped.original_price,
@@ -80,6 +83,8 @@ class ProductService:
         price = data.current_price
         original_price = data.original_price
         image_url = data.image_url
+        sku_id = data.sku_id
+        sku_name = data.sku_name
 
         # If price or name missing, fetch via provider
         if not price or price <= 0 or not name:
@@ -91,11 +96,16 @@ class ProductService:
             price = scraped.price
             original_price = scraped.original_price
             image_url = scraped.image_url
+            sku_id = sku_id or scraped.sku_id
+            sku_name = sku_name or scraped.sku_name
 
         now = datetime.datetime.utcnow()
         product = Product(
             name=name,
             url=canonical_url,
+            sku_id=sku_id,
+            sku_name=sku_name,
+            note=data.note,
             image_url=image_url,
             current_price=price,
             original_price=original_price,
@@ -293,6 +303,9 @@ class ProductService:
             id=product.id,
             name=product.name,
             url=product.url,
+            sku_id=product.sku_id,
+            sku_name=product.sku_name,
+            note=product.note,
             image_url=product.image_url,
             current_price=product.current_price,
             original_price=product.original_price,
