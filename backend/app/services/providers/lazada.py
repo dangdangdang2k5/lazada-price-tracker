@@ -384,7 +384,7 @@ class LazadaPriceProvider(BasePriceProvider):
             if item_id:
                 search_url = f"https://www.lazada.vn/catalog/?q={item_id}"
                 try:
-                    await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
+                    await page.goto(search_url, wait_until="commit", timeout=20000)
                     try:
                         await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
                     except asyncio.TimeoutError:
@@ -395,10 +395,10 @@ class LazadaPriceProvider(BasePriceProvider):
             # If catalog search didn't yield result, try direct PDP navigation
             if not captured_catalog_json and not captured_list:
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    await page.goto(url, wait_until="commit", timeout=20000)
                     await page.evaluate("window.scrollBy(0, 300)")
                     try:
-                        await asyncio.wait_for(mtop_event.wait(), timeout=8.0)
+                        await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
                     except asyncio.TimeoutError:
                         pass
                 except Exception:
