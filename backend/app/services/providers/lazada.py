@@ -408,7 +408,29 @@ class LazadaPriceProvider(BasePriceProvider):
                 {"name": "country", "value": "VN", "domain": ".lazada.vn", "path": "/"}
             ])
             cookie_file = Path(os.getenv("LAZADA_COOKIE_FILE", "cache/lazada_cookies.json"))
-            if cookie_file.exists():
+            raw_cookie_json = os.getenv("LAZADA_COOKIES_JSON", "")
+            if raw_cookie_json:
+                try:
+                    saved_cookies = json.loads(raw_cookie_json)
+                    if isinstance(saved_cookies, dict):
+                        saved_cookies = saved_cookies.get("cookies", [])
+                    if isinstance(saved_cookies, list):
+                        playwright_cookies = []
+                        for cookie in saved_cookies:
+                            item = {key: cookie[key] for key in ("name", "value", "domain", "path", "secure", "httpOnly") if key in cookie}
+                            same_site = cookie.get("sameSite")
+                            if same_site in ("Strict", "Lax", "None"):
+                                item["sameSite"] = same_site
+                            elif same_site == "no_restriction":
+                                item["sameSite"] = "None"
+                            if cookie.get("expirationDate"):
+                                item["expires"] = cookie["expirationDate"]
+                            if item.get("name") and "value" in item:
+                                playwright_cookies.append(item)
+                        await context.add_cookies(playwright_cookies)
+                except Exception as cookie_err:
+                    logger.warning(f"[PW] Ignoring invalid LAZADA_COOKIES_JSON: {cookie_err}")
+            elif cookie_file.exists():
                 try:
                     saved_cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
                     if isinstance(saved_cookies, list):

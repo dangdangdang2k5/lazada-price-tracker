@@ -68,7 +68,8 @@ export default function ProductModal({ isOpen, onClose, onSuccess }) {
         setError(data.error_message || 'Không thể lấy thông tin giá từ Lazada URL này.');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Lỗi kết nối khi lấy thông tin sản phẩm.');
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : (detail?.message || detail?.error || 'Backend không phản hồi kịp. Render có thể đang khởi động Playwright, hãy thử lại sau vài giây.'));
     } finally {
       setLoadingPreview(false);
     }
