@@ -170,6 +170,33 @@ async def main():
     # ROUND 2 (At minute 2:30)
     updated_2 = await check_products_round(provider, products, bot_token, chat_id, round_num=2)
 
+    # If manually triggered from GitHub Actions (workflow_dispatch) or requested via FORCE_REPORT, send an on-demand summary report
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "").strip()
+    force_report = os.environ.get("FORCE_REPORT", "").strip() == "1"
+    
+    if (event_name == "workflow_dispatch" or force_report) and products:
+        report_msg = (
+            f"📋 <b>BÁO CÁO TRẠNG THÁI GIÁ LAZADA (Thủ công)</b>\n\n"
+            f"⏰ <b>Thời gian:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}\n"
+            f"📊 <b>Tổng theo dõi:</b> {len(products)} sản phẩm\n\n"
+        )
+        for idx, item in enumerate(products, 1):
+            p_name = item.get("name", "Sản phẩm")
+            p_price = item.get("last_price", 0)
+            p_target = item.get("target_price", 0)
+            p_sku = item.get("sku_name", "")
+            p_note = item.get("note", "")
+
+            report_msg += f"{idx}️⃣ <b>{p_name[:35]}...</b>\n"
+            if p_sku:
+                report_msg += f"🏷️ Phân loại: {p_sku}\n"
+            if p_note:
+                report_msg += f"📝 Ghi chú: {p_note}\n"
+            report_msg += f"💵 Giá: <code>{format_currency(p_price)}</code> | 🎯 Mục tiêu: <code>{format_currency(p_target)}</code>\n\n"
+
+        report_msg += "<i>✅ Tất cả sản phẩm đang được theo dõi tự động 24/7!</i>"
+        await send_telegram_alert(bot_token, chat_id, report_msg)
+
     if updated_1 or updated_2:
         with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
