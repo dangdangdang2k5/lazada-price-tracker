@@ -330,8 +330,28 @@ class LazadaPriceProvider(BasePriceProvider):
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                 locale="vi-VN",
+                timezone_id="Asia/Ho_Chi_Minh",
                 viewport={"width": 1366, "height": 768},
+                extra_http_headers={
+                    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Sec-Ch-Ua": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+                    "Sec-Ch-Ua-Mobile": "?0",
+                    "Sec-Ch-Ua-Platform": '"Windows"',
+                }
             )
+
+            # Set default Vietnamese session cookies & languages
+            await context.add_cookies([
+                {"name": "userLanguageML", "value": "vi", "domain": ".lazada.vn", "path": "/"},
+                {"name": "hng", "value": "VN|vi|VND|704", "domain": ".lazada.vn", "path": "/"},
+                {"name": "country", "value": "VN", "domain": ".lazada.vn", "path": "/"}
+            ])
+
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'languages', { get: () => ['vi-VN', 'vi', 'en-US', 'en'] });
+                Object.defineProperty(navigator, 'language', { get: () => 'vi-VN' });
+            """)
 
             page = await context.new_page()
             captured_list = []

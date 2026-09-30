@@ -6,7 +6,7 @@ RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python Backend with FastAPI
+# Stage 2: Python Backend with FastAPI & Playwright Chromium
 FROM python:3.11-slim
 WORKDIR /app
 
@@ -16,24 +16,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    playwright install --with-deps chromium
 
-# Copy backend source code
+# Copy backend source code & products data
 COPY backend/ .
+COPY products.json /app/products.json
 
 # Copy built frontend assets to static folder inside backend
 COPY --from=frontend-builder /app/frontend/dist ./static
 
-# Hugging Face Spaces standard user (UID 1000)
-RUN useradd -m -u 1000 user && \
-    chown -R user:user /app
-USER user
+ENV PORT=8000 \
+    PYTHONUNBUFFERED=1
 
-ENV HOME=/home/user \
-    PATH=/home/user/.local/bin:$PATH \
-    PORT=7860
-
-EXPOSE 8000 10000
+EXPOSE 8000
 
 # Run FastAPI with uvicorn listening on the port provided by Render / Cloud
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

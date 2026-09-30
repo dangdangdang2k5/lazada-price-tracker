@@ -5,16 +5,72 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import init_db, AsyncSessionLocal
 from app.core.logging import logger
 from app.jobs.scheduler import start_scheduler, shutdown_scheduler
 from app.api import api_router
+
+
+from sqlalchemy import select
+from app.models.product import Product
+from app.models.alert import Alert, AlertType
+
+
+async def auto_seed_products():
+    """
+    Automatically import products from products.json on startup if DB is empty or has missing items.
+    """
+    products_file = None
+    for p in ["products.json", "../products.json", "/app/products.json"]:
+        if os.path.exists(p):
+            products_file = p
+            break
+    if not products_file:
+        return
+    try:
+        with open(products_file, "r", encoding="utf-8") as f:
+            items = json.load(f)
+        if not items:
+            return
+        async with AsyncSessionLocal() as session:
+            for it in items:
+                url = it.get("url")
+                if not url:
+                    continue
+                stmt = select(Product).where(Product.url == url)
+                res = await session.execute(stmt)
+                existing = res.scalar_one_or_none()
+                if not existing:
+                    p = Product(
+                        name=it.get("name") or "Lazada Product",
+                        url=url,
+                        current_price=it.get("last_price", 0),
+                        lowest_price=it.get("last_price", 0),
+                        highest_price=it.get("last_price", 0),
+                        active=True
+                    )
+                    session.add(p)
+                    await session.flush()
+                    target_price = it.get("target_price", 0)
+                    if target_price > 0:
+                        alert = Alert(
+                            product_id=p.id,
+                            alert_type=AlertType.TARGET_PRICE,
+                            target_price=target_price,
+                            enabled=True
+                        )
+                        session.add(alert)
+            await session.commit()
+            logger.info("[INIT] Auto-seeded products from products.json into database.")
+    except Exception as e:
+        logger.warning(f"[INIT] Auto-seed products skipped or failed: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing application and database schemas...")
     await init_db()
+    await auto_seed_products()
     logger.info("Starting background scheduler...")
     start_scheduler()
     yield
