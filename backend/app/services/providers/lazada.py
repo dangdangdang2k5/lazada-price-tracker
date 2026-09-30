@@ -2,6 +2,7 @@ import json
 import re
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import httpx
@@ -17,6 +18,8 @@ USER_AGENTS: List[str] = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
 ]
+
+PLAYWRIGHT_SEMAPHORE = asyncio.Semaphore(1)
 
 
 class LazadaPriceProvider(BasePriceProvider):
@@ -59,6 +62,10 @@ class LazadaPriceProvider(BasePriceProvider):
         # Extract SKU ID from URL (e.g. -s116886611256.html)
         sku_match = re.search(r'-s(\d+)\.html', target_url) or re.search(r'-s(\d+)\.html', url)
         target_sku_id = sku_match.group(1) if sku_match else None
+        cache_key = f"{target_url}|{target_sku_id or ''}"
+        cached = self._price_cache.get(cache_key)
+        if cached and time.monotonic() - cached["at"] < self.CACHE_TTL_SECONDS:
+            return cached["data"].model_copy(deep=True)
 
         html_content = await self._fetch_html(target_url)
         if not html_content:
@@ -133,12 +140,14 @@ class LazadaPriceProvider(BasePriceProvider):
 
         data = self._parse_html(html_content, canonical_url)
         if data and data.price > 0:
+            self._price_cache[cache_key] = {"at": time.monotonic(), "data": data}
             return data
 
         # Browser automation is a fallback after HTTP and structured parsing.
         try:
             pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
             if pw_data and pw_data.price > 0:
+                self._price_cache[cache_key] = {"at": time.monotonic(), "data": pw_data}
                 return pw_data
         except Exception as pw_err:
             logger.warning(f"[CRAWLER] Playwright fallback failed: {pw_err}")
@@ -364,6 +373,10 @@ class LazadaPriceProvider(BasePriceProvider):
         )
 
     async def _fetch_with_playwright(self, url: str, target_sku_id: Optional[str] = None) -> Optional[ProductScrapedData]:
+        async with PLAYWRIGHT_SEMAPHORE:
+            return await self._fetch_with_playwright_once(url, target_sku_id)
+
+    async def _fetch_with_playwright_once(self, url: str, target_sku_id: Optional[str] = None) -> Optional[ProductScrapedData]:
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -734,3 +747,5 @@ class LazadaPriceProvider(BasePriceProvider):
             logger.warning(f"[CRAWLER] Error parsing mtop detail JSON: {e}")
 
         return None
+    _price_cache: Dict[str, Any] = {}
+    CACHE_TTL_SECONDS = 60
