@@ -1,0 +1,26 @@
+[Unit]
+Description=Lazada Price Tracker FastAPI and scheduler
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=lazada
+Group=lazada
+WorkingDirectory=/opt/lazada-tracker/backend
+EnvironmentFile=/etc/lazada-tracker/lazada-tracker.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/lazada-tracker/backend
+ExecStart=/opt/lazada-tracker/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/lazada-tracker/data /opt/lazada-tracker/secrets
+
+[Install]
+WantedBy=multi-user.target

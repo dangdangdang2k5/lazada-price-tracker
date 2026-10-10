@@ -6,9 +6,13 @@ __pycache__/
 .pytest_cache/
 debug/lazada/
 backend/cache/lazada_cookies.json
+backend/cache/browser_profile/
+backend/cache/
 backend/venv/
 backend/.pytest_cache/
 backend/*.db
+backups/
+data/
 *.db
 backend/debug_output.txt
 backend/scratch_*.html

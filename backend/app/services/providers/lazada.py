@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 import httpx
 from bs4 import BeautifulSoup
 from app.core.logging import logger
+from app.core.config import settings
 from app.services.providers.base import BasePriceProvider, ProductScrapedData
 from app.utils.currency import parse_currency
 from app.utils.validators import is_valid_lazada_url, normalize_lazada_url
@@ -180,7 +181,7 @@ class LazadaPriceProvider(BasePriceProvider):
     def _save_debug_response(self, content: str, filename: str) -> None:
         if os.getenv("LAZADA_DEBUG", "false").lower() != "true":
             return
-        path = Path("debug/lazada")
+        path = Path(settings.LAZADA_DEBUG_DIR).expanduser()
         path.mkdir(parents=True, exist_ok=True)
         (path / filename).write_text(content, encoding="utf-8", errors="replace")
 
@@ -420,7 +421,7 @@ class LazadaPriceProvider(BasePriceProvider):
                 {"name": "hng", "value": "VN|vi|VND|704", "domain": ".lazada.vn", "path": "/"},
                 {"name": "country", "value": "VN", "domain": ".lazada.vn", "path": "/"}
             ])
-            cookie_file = Path(os.getenv("LAZADA_COOKIE_FILE", "cache/lazada_cookies.json"))
+            cookie_file = Path(settings.LAZADA_COOKIE_FILE).expanduser()
             raw_cookie_json = os.getenv("LAZADA_COOKIES_JSON", "")
             if raw_cookie_json:
                 try:

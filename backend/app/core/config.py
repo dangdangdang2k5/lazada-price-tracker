@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LAZADA_DEBUG: bool = False
     DATABASE_URL: str = "sqlite+aiosqlite:///./lazada_tracker.db"
+    # Keep deployment data outside the source tree on a VPS.
+    LAZADA_COOKIE_FILE: str = "cache/lazada_cookies.json"
+    LAZADA_DEBUG_DIR: str = "debug/lazada"
     
     # Telegram credentials
     TELEGRAM_BOT_TOKEN: str = ""

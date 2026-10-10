@@ -5,10 +5,11 @@ from typing import Any, List
 from fastapi import APIRouter, HTTPException
 import time
 from app.services.product_service import reset_lazada_session_alert
+from app.core.config import settings
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/lazada/session", tags=["Lazada Session"])
-COOKIE_FILE = Path("cache/lazada_cookies.json")
+COOKIE_FILE = Path(settings.LAZADA_COOKIE_FILE).expanduser()
 
 
 class CookiePayload(BaseModel):
