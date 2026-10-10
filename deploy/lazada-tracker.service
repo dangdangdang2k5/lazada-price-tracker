@@ -15,6 +15,7 @@ RuntimeDirectory=lazada-tracker
 RuntimeDirectoryMode=0700
 Environment=HOME=/run/lazada-tracker
 Environment=XDG_CACHE_HOME=/run/lazada-tracker/cache
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/lazada-tracker/data/playwright-browsers
 ExecStartPre=/usr/bin/install -d -m 0700 /run/lazada-tracker/cache
 ExecStart=/opt/lazada-tracker/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always

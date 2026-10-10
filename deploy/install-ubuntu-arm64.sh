@@ -94,8 +94,11 @@ fi
 
 echo "--- Playwright ARM64 compatibility check ---"
 "$APP_ROOT/.venv/bin/python" -c 'from playwright.async_api import async_playwright; print("Playwright Python import: OK")'
-"$APP_ROOT/.venv/bin/python" -m playwright install --dry-run chromium || \
-  echo "WARNING: Playwright bundled Chromium is not confirmed for ARM64."
+PLAYWRIGHT_BROWSERS_PATH="$APP_ROOT/data/playwright-browsers" \
+  "$APP_ROOT/.venv/bin/python" -m playwright install chromium || \
+  echo "WARNING: Playwright Chromium installation failed; HTTP crawler remains available."
+chown -R "$APP_USER":"$APP_USER" "$APP_ROOT/data/playwright-browsers" 2>/dev/null || true
+chmod -R u+rX,go-rwx "$APP_ROOT/data/playwright-browsers" 2>/dev/null || true
 
 if command -v chromium >/dev/null 2>&1; then
   chromium --version || true
