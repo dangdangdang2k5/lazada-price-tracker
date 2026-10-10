@@ -20,32 +20,57 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-  git python3 python3-venv python3-pip build-essential sqlite3 ca-certificates curl
+  git python3.10 python3.10-venv python3-pip build-essential sqlite3 ca-certificates curl
+
+python3.10 -c 'import sys; assert sys.version_info[:2] == (3, 10), sys.version; print("Python:", sys.version)'
 
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
-  useradd --system --home "$APP_ROOT" --create-home --shell /usr/sbin/nologin "$APP_USER"
+  useradd --system --home /nonexistent --no-create-home --shell /usr/sbin/nologin "$APP_USER"
 fi
-
-install -d -o "$APP_USER" -g "$APP_USER" -m 750 \
-  "$APP_ROOT" "$APP_ROOT/data" "$APP_ROOT/backups" "$APP_ROOT/secrets" "$APP_ROOT/data/debug/lazada" \
-  /etc/lazada-tracker
 
 if [[ ! -d "$APP_ROOT/.git" ]]; then
-  source_dir="$(mktemp -d /tmp/lazada-tracker-src.XXXXXX)"
-  trap 'rm -rf "$source_dir"' EXIT
-  git clone --branch "$REPO_REF" --depth 1 "$REPO_URL" "$source_dir"
-  cp -a "$source_dir/." "$APP_ROOT/"
-  rm -rf "$source_dir"
-  trap - EXIT
+  if [[ -e "$APP_ROOT" ]] && [[ -n "$(find "$APP_ROOT" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    echo "Refusing to clone into non-empty non-Git directory: $APP_ROOT" >&2
+    exit 1
+  fi
+  git clone --branch "$REPO_REF" --depth 1 "$REPO_URL" "$APP_ROOT"
 else
+  # This script runs as root, matching the root-owned checkout. Do not use a
+  # global safe.directory exception and do not discard local source changes.
+  if [[ -n "$(git -C "$APP_ROOT" status --porcelain --untracked-files=normal)" ]]; then
+    echo "Refusing to update: repository has local changes or untracked files." >&2
+    echo "Commit/stash or inspect them before re-running this script." >&2
+    exit 1
+  fi
   git -C "$APP_ROOT" fetch --depth 1 origin "$REPO_REF"
-  git -C "$APP_ROOT" checkout -q "$REPO_REF"
-  git -C "$APP_ROOT" pull --ff-only origin "$REPO_REF"
+  remote_ref="origin/$REPO_REF"
+  if ! git -C "$APP_ROOT" merge-base --is-ancestor HEAD "$remote_ref"; then
+    echo "Refusing to update: HEAD is not an ancestor of $remote_ref." >&2
+    echo "No reset, checkout, or overwrite was performed." >&2
+    exit 1
+  fi
+  git -C "$APP_ROOT" merge --ff-only "$remote_ref"
 fi
 
-python3 -m venv "$APP_ROOT/.venv"
+# Source and virtual environment are root-owned. The service account can read
+# and execute them but only owns the explicit runtime directories below.
+chown -R root:root "$APP_ROOT/.git" "$APP_ROOT/backend" "$APP_ROOT/frontend" "$APP_ROOT/deploy" "$APP_ROOT/scripts"
+chown root:root "$APP_ROOT" "$APP_ROOT/.env.example" "$APP_ROOT/.gitignore" "$APP_ROOT/Dockerfile" "$APP_ROOT/docker-compose.yml" "$APP_ROOT/products.json" "$APP_ROOT/render.yaml" "$APP_ROOT/README.md"
+chmod -R go-w "$APP_ROOT/.git" "$APP_ROOT/backend" "$APP_ROOT/frontend" "$APP_ROOT/deploy" "$APP_ROOT/scripts"
+chmod -R a+rX "$APP_ROOT/backend" "$APP_ROOT/frontend" "$APP_ROOT/deploy" "$APP_ROOT/scripts"
+
+python3.10 -m venv "$APP_ROOT/.venv"
 "$APP_ROOT/.venv/bin/python" -m pip install --upgrade pip wheel
 "$APP_ROOT/.venv/bin/pip" install --requirement "$APP_ROOT/backend/requirements-production.txt"
+
+install -d -o "$APP_USER" -g "$APP_USER" -m 750 \
+  "$APP_ROOT/data" "$APP_ROOT/backups" "$APP_ROOT/secrets" "$APP_ROOT/data/debug/lazada"
+# Preserve runtime content while fixing ownership after a root-run installation.
+# These are the only application-owned writable paths.
+chown -R "$APP_USER":"$APP_USER" "$APP_ROOT/data" "$APP_ROOT/backups" "$APP_ROOT/secrets"
+chmod -R u+rwX,go-rwx "$APP_ROOT/data" "$APP_ROOT/backups" "$APP_ROOT/secrets"
+chmod -R a+rX "$APP_ROOT/.venv"
+install -d -o root -g root -m 750 /etc/lazada-tracker
 
 if [[ ! -f /etc/lazada-tracker/lazada-tracker.env ]]; then
   install -m 600 -o root -g root "$APP_ROOT/.env.example" /etc/lazada-tracker/lazada-tracker.env
@@ -66,7 +91,6 @@ else
 fi
 
 install -m 644 "$APP_ROOT/deploy/lazada-tracker.service" /etc/systemd/system/lazada-tracker.service
-chown -R "$APP_USER":"$APP_USER" "$APP_ROOT"
 systemctl daemon-reload
 
 echo "Installation prepared. Review /etc/lazada-tracker/lazada-tracker.env, then run:"

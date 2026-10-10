@@ -9,6 +9,8 @@ backend/cache/lazada_cookies.json
 backend/cache/browser_profile/
 backend/cache/
 backend/venv/
+.venv/
+secrets/
 backend/.pytest_cache/
 backend/*.db
 backups/

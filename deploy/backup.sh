@@ -5,6 +5,11 @@ APP_ROOT="${APP_ROOT:-/opt/lazada-tracker}"
 DB_FILE="${DB_FILE:-$APP_ROOT/data/lazada_tracker.db}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_ROOT/backups}"
 
+if [[ "$(id -un)" != "${APP_USER:-lazada}" ]]; then
+  echo "Run this backup as the lazada service user, for example: sudo -u lazada $0" >&2
+  exit 1
+fi
+
 if [[ ! -f "$DB_FILE" ]]; then
   echo "Database not found: $DB_FILE" >&2
   exit 1

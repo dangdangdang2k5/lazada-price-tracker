@@ -11,15 +11,20 @@ WorkingDirectory=/opt/lazada-tracker/backend
 EnvironmentFile=/etc/lazada-tracker/lazada-tracker.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/opt/lazada-tracker/backend
+Environment=HOME=/tmp/lazada
+Environment=XDG_CACHE_HOME=/tmp/lazada/.cache
 ExecStart=/opt/lazada-tracker/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=10
 TimeoutStopSec=30
 KillSignal=SIGINT
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
+# Source remains root-owned. Only paths used by SQLite, cookie/session writes,
+# and optional debug captures are writable to the application process.
 ReadWritePaths=/opt/lazada-tracker/data /opt/lazada-tracker/secrets
 
 [Install]
