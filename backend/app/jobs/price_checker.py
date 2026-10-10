@@ -9,7 +9,12 @@ from app.services.product_service import ProductService
 _is_checking = False
 
 
-async def check_all_products_job() -> None:
+def is_price_check_running() -> bool:
+    """Return whether a scheduled or on-demand full scan is currently running."""
+    return _is_checking
+
+
+async def check_all_products_job() -> bool:
     """
     Background job triggered periodically by APScheduler.
     Iterates through all active products and performs price refresh & alert triggers.
@@ -17,7 +22,7 @@ async def check_all_products_job() -> None:
     global _is_checking
     if _is_checking:
         logger.warning("[SCHEDULER] Previous price check job is still in progress. Skipping this iteration.")
-        return
+        return False
 
     _is_checking = True
     logger.info("[SCHEDULER] Starting periodic price check for all active products...")
@@ -52,3 +57,4 @@ async def check_all_products_job() -> None:
     finally:
         _is_checking = False
         logger.info("[SCHEDULER] Periodic price check completed.")
+    return True

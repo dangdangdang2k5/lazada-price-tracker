@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # Telegram credentials
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    # Receive commands through Telegram long polling. This needs no public HTTP port.
+    TELEGRAM_COMMAND_POLLING_ENABLED: bool = True
+    TELEGRAM_COMMAND_POLL_TIMEOUT_SECONDS: int = 25
+    # Optional persistent getUpdates offset. Set this to a writable file outside
+    # the source checkout in production (for example /opt/.../data/telegram_offset.json).
+    TELEGRAM_UPDATE_OFFSET_FILE: str = ""
     
     # Scheduler interval (Randomized between MIN and MAX seconds)
     PRICE_CHECK_MIN_INTERVAL_SECONDS: int = 120  # 2 minutes

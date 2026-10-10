@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import init_db, AsyncSessionLocal
 from app.core.logging import logger
 from app.jobs.scheduler import start_scheduler, shutdown_scheduler
+from app.services.telegram_command_bot import telegram_command_bot
 from app.api import api_router
 
 
@@ -74,7 +75,9 @@ async def lifespan(app: FastAPI):
     await auto_seed_products()
     logger.info("Starting background scheduler...")
     start_scheduler()
+    await telegram_command_bot.start()
     yield
+    await telegram_command_bot.stop()
     logger.info("Shutting down application scheduler...")
     shutdown_scheduler()
 
