@@ -42,14 +42,29 @@ else
     echo "Commit/stash or inspect them before re-running this script." >&2
     exit 1
   fi
-  git -C "$APP_ROOT" fetch --depth 1 origin "$REPO_REF"
   remote_ref="origin/$REPO_REF"
-  if ! git -C "$APP_ROOT" merge-base --is-ancestor HEAD "$remote_ref"; then
-    echo "Refusing to update: HEAD is not an ancestor of $remote_ref." >&2
+  fetch_refspec="+refs/heads/$REPO_REF:refs/remotes/origin/$REPO_REF"
+
+  # A shallow checkout does not necessarily contain the common ancestor needed
+  # by merge-base. Deepen it before deciding whether a fast-forward is safe.
+  # This changes only origin/<branch>, never the worktree or local HEAD.
+  if [[ "$(git -C "$APP_ROOT" rev-parse --is-shallow-repository)" == "true" ]]; then
+    git -C "$APP_ROOT" fetch --unshallow --prune origin "$fetch_refspec"
+  else
+    git -C "$APP_ROOT" fetch --prune origin "$fetch_refspec"
+  fi
+
+  if git -C "$APP_ROOT" merge-base --is-ancestor HEAD "$remote_ref"; then
+    git -C "$APP_ROOT" merge --ff-only "$remote_ref"
+  elif git -C "$APP_ROOT" merge-base --is-ancestor "$remote_ref" HEAD; then
+    echo "Refusing to update: local HEAD is ahead of $remote_ref." >&2
+    echo "No reset, checkout, or overwrite was performed." >&2
+    exit 1
+  else
+    echo "Refusing to update: local and remote histories have diverged." >&2
     echo "No reset, checkout, or overwrite was performed." >&2
     exit 1
   fi
-  git -C "$APP_ROOT" merge --ff-only "$remote_ref"
 fi
 
 # Source and virtual environment are root-owned. The service account can read

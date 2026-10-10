@@ -11,8 +11,11 @@ WorkingDirectory=/opt/lazada-tracker/backend
 EnvironmentFile=/etc/lazada-tracker/lazada-tracker.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/opt/lazada-tracker/backend
-Environment=HOME=/tmp/lazada
-Environment=XDG_CACHE_HOME=/tmp/lazada/.cache
+RuntimeDirectory=lazada-tracker
+RuntimeDirectoryMode=0700
+Environment=HOME=/run/lazada-tracker
+Environment=XDG_CACHE_HOME=/run/lazada-tracker/cache
+ExecStartPre=/usr/bin/install -d -m 0700 /run/lazada-tracker/cache
 ExecStart=/opt/lazada-tracker/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=10
