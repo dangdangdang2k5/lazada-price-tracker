@@ -216,7 +216,7 @@ class ProductService:
                 await telegram_service.send_message(
                     "⚠️ <b>Lazada session cần cập nhật</b>\n\n"
                     "Cookie/session Lazada đã hết hạn hoặc bị yêu cầu xác minh.\n"
-                    "Mở giao diện local → Session Lazada để cập nhật cookie mới."
+                    "Gửi lệnh /cookie cho bot Telegram để cập nhật file JSON cookie mới."
                 )
             logger.warning(f"[REFRESH] Could not update price for product ID {product.id}: {scraped.error_message}")
             return self._format_product_response(product)

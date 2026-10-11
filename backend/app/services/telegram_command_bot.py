@@ -22,10 +22,13 @@ from app.utils.currency import format_currency
 
 
 COMMAND_KEYBOARD = {
-    "keyboard": [["/status", "/check"], ["/products", "/session"], ["/help"]],
+    "keyboard": [["/status", "/check"], ["/products", "/session"], ["/cookie", "/help"]],
     "resize_keyboard": True,
     "is_persistent": True,
 }
+
+COOKIE_UPLOAD_WINDOW_SECONDS = 5 * 60
+MAX_COOKIE_FILE_BYTES = 1_000_000
 
 
 class TelegramCommandBot:
@@ -36,6 +39,7 @@ class TelegramCommandBot:
         self._on_demand_check_task: Optional[asyncio.Task[None]] = None
         self._offset = 0
         self._started_at: Optional[datetime.datetime] = None
+        self._awaiting_cookie_upload_until: Optional[datetime.datetime] = None
         self._offset_file = Path(settings.TELEGRAM_UPDATE_OFFSET_FILE).expanduser() if settings.TELEGRAM_UPDATE_OFFSET_FILE else None
 
     def enabled(self) -> bool:
@@ -141,11 +145,17 @@ class TelegramCommandBot:
         message = update.get("message") or {}
         chat = message.get("chat") or {}
         chat_id = str(chat.get("id", ""))
-        text = (message.get("text") or "").strip()
-        if not text:
-            return
         if chat_id != str(settings.TELEGRAM_CHAT_ID):
             logger.warning(f"[TELEGRAM BOT] Ignored command from unauthorized chat {chat_id}.")
+            return
+
+        document = message.get("document")
+        if document:
+            await self._receive_cookie_document(document)
+            return
+
+        text = (message.get("text") or "").strip()
+        if not text:
             return
 
         command = text.split(maxsplit=1)[0].split("@", 1)[0].lower()
@@ -156,6 +166,7 @@ class TelegramCommandBot:
             "/session": self._send_session_status,
             "/products": self._send_products,
             "/check": self._start_price_check,
+            "/cookie": self._request_cookie_upload,
         }
         handler = handlers.get(command)
         if handler:
@@ -169,7 +180,8 @@ class TelegramCommandBot:
             "/status — tình trạng service và scheduler\n"
             "/check — quét giá ngay (không chạy trùng)\n"
             "/products — danh sách sản phẩm đang theo dõi\n"
-            "/session — tình trạng cookie Lazada",
+            "/session — tình trạng cookie Lazada\n"
+            "/cookie — gửi file JSON cookie mới",
             reply_markup=COMMAND_KEYBOARD,
         )
 
@@ -203,6 +215,115 @@ class TelegramCommandBot:
             except Exception:
                 text = "<b>Session Lazada</b>\n\n❌ File cookie không hợp lệ."
         await telegram_service.send_message(text, reply_markup=COMMAND_KEYBOARD)
+
+    async def _request_cookie_upload(self) -> None:
+        self._awaiting_cookie_upload_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=COOKIE_UPLOAD_WINDOW_SECONDS)
+        await telegram_service.send_message(
+            "🔐 Hãy gửi <b>file JSON cookie Lazada</b> dưới dạng <b>Document/File</b> trong 5 phút.\n\n"
+            "Không dán nội dung cookie vào chat. Bot chỉ nhận file từ chat này, kiểm tra định dạng rồi lưu tại VPS.",
+            reply_markup=COMMAND_KEYBOARD,
+        )
+
+    async def _receive_cookie_document(self, document: dict[str, Any]) -> None:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if not self._awaiting_cookie_upload_until or now > self._awaiting_cookie_upload_until:
+            self._awaiting_cookie_upload_until = None
+            await telegram_service.send_message("Gõ /cookie trước, rồi gửi file JSON trong vòng 5 phút.", reply_markup=COMMAND_KEYBOARD)
+            return
+
+        file_name = str(document.get("file_name") or "")
+        try:
+            file_size = int(document.get("file_size") or 0)
+        except (TypeError, ValueError):
+            file_size = 0
+        if not file_name.lower().endswith(".json"):
+            await telegram_service.send_message("❌ Chỉ nhận file có đuôi <b>.json</b>. Hãy xuất cookie dạng JSON rồi gửi lại.", reply_markup=COMMAND_KEYBOARD)
+            return
+        if file_size <= 0 or file_size > MAX_COOKIE_FILE_BYTES:
+            await telegram_service.send_message("❌ File cookie không hợp lệ hoặc lớn hơn 1 MB.", reply_markup=COMMAND_KEYBOARD)
+            return
+
+        file_id = document.get("file_id")
+        token = telegram_service.bot_token
+        if not file_id or not token:
+            await telegram_service.send_message("❌ Không thể nhận file vì Telegram chưa được cấu hình đầy đủ.", reply_markup=COMMAND_KEYBOARD)
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                metadata_response = await client.post(
+                    f"https://api.telegram.org/bot{token}/getFile", json={"file_id": file_id}
+                )
+                metadata = metadata_response.json()
+                file_path = metadata.get("result", {}).get("file_path") if metadata_response.status_code == 200 and metadata.get("ok") else None
+                if not file_path:
+                    raise ValueError("Telegram could not provide the uploaded file")
+                download_response = await client.get(f"https://api.telegram.org/file/bot{token}/{file_path}")
+                download_response.raise_for_status()
+                if len(download_response.content) > MAX_COOKIE_FILE_BYTES:
+                    raise ValueError("Cookie file is too large")
+                cookies = self._validate_cookie_payload(download_response.content)
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            await telegram_service.send_message("❌ File JSON cookie không đúng định dạng. Hãy xuất lại cookie từ trình duyệt rồi thử lại.", reply_markup=COMMAND_KEYBOARD)
+            return
+        except Exception as exc:
+            logger.error(f"[TELEGRAM BOT] Cookie upload failed: {type(exc).__name__}")
+            await telegram_service.send_message("❌ Không thể tải file cookie từ Telegram. Hãy thử lại sau.", reply_markup=COMMAND_KEYBOARD)
+            return
+
+        try:
+            self._save_cookies(cookies)
+        except OSError as exc:
+            logger.error(f"[TELEGRAM BOT] Could not save cookie file: {type(exc).__name__}")
+            await telegram_service.send_message("❌ Không thể lưu cookie tại VPS. Hãy kiểm tra quyền thư mục secrets.", reply_markup=COMMAND_KEYBOARD)
+            return
+        self._awaiting_cookie_upload_until = None
+        expired = self._expired_cookie_count(cookies)
+        await telegram_service.send_message(
+            f"✅ Đã lưu <b>{len(cookies)}</b> cookie Lazada trên VPS.\n"
+            f"Cookie đã hết hạn theo metadata: <b>{expired}</b>.\n\n"
+            "Gõ /check để thử quét giá ngay.",
+            reply_markup=COMMAND_KEYBOARD,
+        )
+
+    @staticmethod
+    def _validate_cookie_payload(raw_bytes: bytes) -> list[dict[str, Any]]:
+        payload = json.loads(raw_bytes.decode("utf-8-sig"))
+        cookies = payload.get("cookies") if isinstance(payload, dict) else payload
+        if not isinstance(cookies, list) or not cookies or len(cookies) > 2_000:
+            raise ValueError("Cookie payload must be a non-empty list")
+        for cookie in cookies:
+            if (
+                not isinstance(cookie, dict)
+                or not isinstance(cookie.get("name"), str)
+                or not cookie["name"].strip()
+                or not isinstance(cookie.get("value"), str)
+            ):
+                raise ValueError("Every cookie needs a name and value")
+        return cookies
+
+    @staticmethod
+    def _expired_cookie_count(cookies: list[dict[str, Any]]) -> int:
+        now = time.time()
+        expired = 0
+        for cookie in cookies:
+            try:
+                if cookie.get("expirationDate") and float(cookie["expirationDate"]) <= now:
+                    expired += 1
+            except (TypeError, ValueError):
+                continue
+        return expired
+
+    @staticmethod
+    def _save_cookies(cookies: list[dict[str, Any]]) -> None:
+        cookie_file = Path(settings.LAZADA_COOKIE_FILE).expanduser()
+        cookie_file.parent.mkdir(parents=True, exist_ok=True)
+        temp_file = cookie_file.with_suffix(cookie_file.suffix + ".tmp")
+        temp_file.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_file.replace(cookie_file)
+        # Allow the next anti-bot failure to raise one actionable alert if this new session is invalid.
+        from app.services.product_service import reset_lazada_session_alert
+        reset_lazada_session_alert()
 
     async def _send_products(self) -> None:
         async with AsyncSessionLocal() as session:
