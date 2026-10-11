@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Keep deployment data outside the source tree on a VPS.
     LAZADA_COOKIE_FILE: str = "cache/lazada_cookies.json"
     LAZADA_DEBUG_DIR: str = "debug/lazada"
+    # Empty means a sidecar JSON file next to LAZADA_COOKIE_FILE.
+    LAZADA_SESSION_HEALTH_FILE: str = ""
+    LAZADA_SESSION_FAILURE_THRESHOLD: int = 3
     
     # Telegram credentials
     TELEGRAM_BOT_TOKEN: str = ""

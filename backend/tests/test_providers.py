@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from app.services.providers.lazada import LazadaPriceProvider
 from app.services.providers.factory import get_price_provider_for_url
@@ -67,3 +68,21 @@ def test_lazada_provider_script_init_data_parsing():
 def test_provider_factory():
     provider = get_price_provider_for_url("https://www.lazada.vn/products/test-i123.html")
     assert isinstance(provider, LazadaPriceProvider)
+
+
+def test_lazada_login_page_is_classified_as_session_expired(monkeypatch):
+    provider = LazadaPriceProvider()
+
+    async def login_page(_url):
+        return "<html><body><form>login password</form></body></html>"
+
+    async def no_playwright(_url, _sku):
+        return None
+
+    monkeypatch.setattr(provider, "_fetch_html", login_page)
+    monkeypatch.setattr(provider, "_fetch_with_playwright", no_playwright)
+
+    data = asyncio.run(provider.get_product_info("https://www.lazada.vn/products/test-i123.html", use_cache=False))
+
+    assert data.success is False
+    assert data.error_code == "SESSION_EXPIRED"

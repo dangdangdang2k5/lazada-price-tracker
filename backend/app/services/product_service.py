@@ -17,15 +17,13 @@ from app.schemas.alert import AlertCreateInput, AlertResponse
 from app.services.providers.factory import get_price_provider_for_url
 from app.services.alert_engine import AlertEngine
 from app.services.telegram_service import telegram_service
+from app.services.lazada_session_health import session_health
 from app.utils.currency import format_currency
 from app.utils.validators import normalize_lazada_url, is_valid_lazada_url
 
-lazada_session_alerted = False
-
-
 def reset_lazada_session_alert() -> None:
-    global lazada_session_alerted
-    lazada_session_alerted = False
+    """Compatibility entry point used after the user replaces the Lazada cookie file."""
+    session_health.reset()
 
 
 class ProductService:
@@ -210,16 +208,23 @@ class ProductService:
         scraped = await provider.get_product_info(product.url)
 
         if not scraped.success or scraped.price <= 0:
-            global lazada_session_alerted
-            if scraped.error_code == "ANTI_BOT_CHALLENGE" and not lazada_session_alerted:
-                lazada_session_alerted = True
+            health_update = session_health.observe_failure(scraped.error_code, scraped.error_message)
+            if health_update.became_unusable and telegram_service.is_configured():
                 await telegram_service.send_message(
-                    "⚠️ <b>Lazada session cần cập nhật</b>\n\n"
-                    "Cookie/session Lazada đã hết hạn hoặc bị yêu cầu xác minh.\n"
-                    "Gửi lệnh /cookie cho bot Telegram để cập nhật file JSON cookie mới."
+                    "⚠️ <b>Session Lazada không dùng được</b>\n\n"
+                    f"Kết quả xác thực thất bại {health_update.failure_count} lần liên tiếp.\n"
+                    f"Nguyên nhân gần nhất: <code>{scraped.error_code or 'UNKNOWN'}</code>\n"
+                    "Gửi lệnh /cookie cho bot Telegram để cập nhật file JSON cookie mới, sau đó dùng /check để xác thực lại."
                 )
             logger.warning(f"[REFRESH] Could not update price for product ID {product.id}: {scraped.error_message}")
             return self._format_product_response(product)
+
+        health_update = session_health.observe_success()
+        if health_update.recovered and telegram_service.is_configured():
+            await telegram_service.send_message(
+                "✅ <b>Session Lazada đã xác thực lại thành công</b>\n\n"
+                "Tracker vừa lấy được dữ liệu sản phẩm thật từ Lazada."
+            )
 
         old_price = product.current_price
         new_price = scraped.price

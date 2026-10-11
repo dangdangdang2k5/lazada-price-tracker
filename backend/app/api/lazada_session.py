@@ -5,6 +5,7 @@ from typing import Any, List
 from fastapi import APIRouter, HTTPException
 import time
 from app.services.product_service import reset_lazada_session_alert
+from app.services.lazada_session_health import session_health
 from app.core.config import settings
 from pydantic import BaseModel
 
@@ -32,19 +33,20 @@ async def save_lazada_session(payload: CookiePayload):
 @router.get("")
 async def get_lazada_session_status():
     if not COOKIE_FILE.exists():
-        return {"exists": False, "cookie_count": 0, "expired_count": 0}
+        return {"exists": False, "cookie_count": 0, "expired_count": 0, "health": session_health.snapshot()}
     try:
         cookies = json.loads(COOKIE_FILE.read_text(encoding="utf-8"))
         now = time.time()
         expired = sum(1 for c in cookies if c.get("expirationDate") and float(c["expirationDate"]) <= now)
         return {"exists": True, "cookie_count": len(cookies), "expired_count": expired,
-                "status": "expired" if expired == len(cookies) else "active"}
+                "status": "expired" if expired == len(cookies) else "active", "health": session_health.snapshot()}
     except Exception:
-        return {"exists": True, "cookie_count": 0, "expired_count": 0, "status": "invalid"}
+        return {"exists": True, "cookie_count": 0, "expired_count": 0, "status": "invalid", "health": session_health.snapshot()}
 
 
 @router.delete("")
 async def clear_lazada_session():
     if COOKIE_FILE.exists():
         COOKIE_FILE.unlink()
+    session_health.reset()
     return {"success": True}

@@ -33,7 +33,7 @@ class LazadaPriceProvider(BasePriceProvider):
         self.timeout = timeout_seconds
         self.retries = retries
 
-    async def get_product_info(self, url: str) -> ProductScrapedData:
+    async def get_product_info(self, url: str, use_cache: bool = True) -> ProductScrapedData:
         canonical_url = normalize_lazada_url(url)
         if not is_valid_lazada_url(canonical_url):
             return ProductScrapedData(
@@ -65,7 +65,7 @@ class LazadaPriceProvider(BasePriceProvider):
         target_sku_id = sku_match.group(1) if sku_match else None
         cache_key = f"{target_url}|{target_sku_id or ''}"
         cached = self._price_cache.get(cache_key)
-        if cached and time.monotonic() - cached["at"] < self.CACHE_TTL_SECONDS:
+        if use_cache and cached and time.monotonic() - cached["at"] < self.CACHE_TTL_SECONDS:
             return cached["data"].model_copy(deep=True)
 
         html_content = await self._fetch_html(target_url)
@@ -101,7 +101,7 @@ class LazadaPriceProvider(BasePriceProvider):
                 logger.warning(f"[CRAWLER] Playwright login-session fallback failed: {pw_err}")
             return ProductScrapedData(name="Lazada product", price=0, url=canonical_url,
                                       success=False, error_message="Lazada returned a login page",
-                                      error_code="ANTI_BOT_CHALLENGE")
+                                      error_code="SESSION_EXPIRED")
 
         # Handle Lazada short links (s.lazada.vn share bridge pages)
         target_url_match = (
@@ -136,7 +136,8 @@ class LazadaPriceProvider(BasePriceProvider):
                 price=0,
                 url=canonical_url,
                 success=False,
-                error_message="Lazada đã kích hoạt cơ chế Anti-Bot/Captcha. Không thể cào dữ liệu giá trực tiếp."
+                error_message="Lazada đã kích hoạt cơ chế Anti-Bot/Captcha. Không thể cào dữ liệu giá trực tiếp.",
+                error_code="ANTI_BOT_CHALLENGE"
             )
 
         data = self._parse_html(html_content, canonical_url)

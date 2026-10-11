@@ -17,6 +17,8 @@ from app.core.logging import logger
 from app.jobs.price_checker import check_all_products_job, is_price_check_running
 from app.jobs.scheduler import scheduler
 from app.models.product import Product
+from app.services.lazada_session_health import SESSION_RELATED_ERRORS, session_health
+from app.services.providers.factory import get_price_provider_for_url
 from app.services.telegram_service import telegram_service
 from app.utils.currency import format_currency
 
@@ -164,6 +166,7 @@ class TelegramCommandBot:
             "/help": self._send_help,
             "/status": self._send_status,
             "/session": self._send_session_status,
+            "/seasion": self._send_session_status,
             "/products": self._send_products,
             "/check": self._start_price_check,
             "/cookie": self._request_cookie_upload,
@@ -204,17 +207,55 @@ class TelegramCommandBot:
     async def _send_session_status(self) -> None:
         cookie_file = Path(settings.LAZADA_COOKIE_FILE).expanduser()
         if not cookie_file.exists():
-            text = "<b>Session Lazada</b>\n\n❌ Chưa có cookie được lưu."
+            await telegram_service.send_message("<b>Session Lazada</b>\n\n❌ Chưa có cookie được lưu. Gõ /cookie để cập nhật.", reply_markup=COMMAND_KEYBOARD)
+            return
+        try:
+            cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
+            expired = self._expired_cookie_count(cookies)
+        except Exception:
+            await telegram_service.send_message("<b>Session Lazada</b>\n\n❌ File cookie không hợp lệ. Gõ /cookie để cập nhật.", reply_markup=COMMAND_KEYBOARD)
+            return
+
+        async with AsyncSessionLocal() as session:
+            product = await session.scalar(
+                select(Product).where(Product.active.is_(True)).order_by(Product.updated_at.desc()).limit(1)
+            )
+        if not product:
+            await telegram_service.send_message(
+                f"<b>Session Lazada</b>\n\n⚪ Chưa có sản phẩm active để xác thực thực tế.\nCookie: {len(cookies)}\nHết hạn theo metadata: {expired}",
+                reply_markup=COMMAND_KEYBOARD,
+            )
+            return
+
+        await telegram_service.send_message("🔎 Đang xác thực session Lazada bằng dữ liệu sản phẩm thật…", reply_markup=COMMAND_KEYBOARD)
+        provider = get_price_provider_for_url(product.url)
+        scraped = await provider.get_product_info(product.url, use_cache=False)
+        if scraped.success and scraped.price > 0:
+            session_health.observe_success()
+            verdict = "✅ <b>Đã xác thực: dùng được</b>\nLazada trả dữ liệu sản phẩm thật."
         else:
-            try:
-                cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
-                now = time.time()
-                expired = sum(1 for item in cookies if item.get("expirationDate") and float(item["expirationDate"]) <= now)
-                status = "⚠️ Cần cập nhật" if cookies and expired == len(cookies) else "✅ Đang có thể dùng"
-                text = f"<b>Session Lazada</b>\n\n{status}\nCookie: {len(cookies)}\nĐã hết hạn: {expired}"
-            except Exception:
-                text = "<b>Session Lazada</b>\n\n❌ File cookie không hợp lệ."
-        await telegram_service.send_message(text, reply_markup=COMMAND_KEYBOARD)
+            health_update = session_health.observe_failure(scraped.error_code, scraped.error_message)
+            if scraped.error_code in SESSION_RELATED_ERRORS:
+                verdict = (
+                    f"{'❌' if health_update.state == 'UNUSABLE' else '⚠️'} <b>{'Session không dùng được' if health_update.state == 'UNUSABLE' else 'Session chưa xác thực được'}</b>\n"
+                    f"Lỗi: <code>{html.escape(scraped.error_code or 'UNKNOWN')}</code>\n"
+                    f"Lỗi liên tiếp: {health_update.failure_count}/{session_health.failure_threshold}"
+                )
+            else:
+                verdict = (
+                    "⚪ <b>Chưa kết luận session hỏng</b>\n"
+                    f"Lỗi không liên quan trực tiếp cookie: <code>{html.escape(scraped.error_code or 'UNKNOWN')}</code>"
+                )
+
+        health = session_health.snapshot()
+        await telegram_service.send_message(
+            "<b>Session Lazada</b>\n\n"
+            f"{verdict}\n\n"
+            f"Cookie: {len(cookies)}\n"
+            f"Hết hạn theo metadata: {expired}\n"
+            f"Lần xác thực thành công gần nhất: {health.get('last_verified_at') or 'chưa có'}",
+            reply_markup=COMMAND_KEYBOARD,
+        )
 
     async def _request_cookie_upload(self) -> None:
         self._awaiting_cookie_upload_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=COOKIE_UPLOAD_WINDOW_SECONDS)

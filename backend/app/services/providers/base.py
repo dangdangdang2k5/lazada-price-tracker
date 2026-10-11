@@ -26,7 +26,7 @@ class BasePriceProvider(ABC):
     """
 
     @abstractmethod
-    async def get_product_info(self, url: str) -> ProductScrapedData:
+    async def get_product_info(self, url: str, use_cache: bool = True) -> ProductScrapedData:
         """
         Fetch and parse product details from given URL.
         Must return normalized ProductScrapedData.
