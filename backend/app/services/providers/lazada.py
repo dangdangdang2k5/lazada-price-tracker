@@ -143,9 +143,10 @@ class LazadaPriceProvider(BasePriceProvider):
         data = self._parse_html(html_content, canonical_url)
 
         # Static HTML often contains the seller/base price while the price the
-        # signed-in shopper sees is supplied later by PDP/MTOP. When a Lazada
-        # browser session is available, prefer that dynamic price and keep the
-        # static result only as a resilient fallback.
+        # signed-in shopper sees is supplied later by PDP/MTOP. With a saved
+        # Lazada session, a static price is not trustworthy enough to replace
+        # a previously verified sale price: a transient browser failure must
+        # leave the tracked price unchanged rather than write the base price.
         if data and data.price > 0 and self._has_saved_browser_session():
             try:
                 pw_data = await self._fetch_with_playwright(target_url, target_sku_id)
@@ -156,7 +157,20 @@ class LazadaPriceProvider(BasePriceProvider):
                     )
                     return pw_data
             except Exception as pw_err:
-                logger.warning(f"[CRAWLER] Dynamic price verification failed; using static fallback: {pw_err}")
+                logger.warning(f"[CRAWLER] Dynamic price verification failed; keeping last verified price: {pw_err}")
+
+            logger.warning(
+                "[CRAWLER] Static Lazada price rejected because the session-aware dynamic price was unavailable."
+            )
+            return ProductScrapedData(
+                name=data.name,
+                price=0,
+                image_url=data.image_url,
+                url=canonical_url,
+                success=False,
+                error_message="Could not verify the session-aware Lazada price; static base price was not applied",
+                error_code="PRICE_EXTRACTION_FAILED",
+            )
 
         if data and data.price > 0:
             self._price_cache[cache_key] = {"at": time.monotonic(), "data": data}
