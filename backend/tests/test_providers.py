@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from app.services.providers.lazada import LazadaPriceProvider
+from app.services.providers.base import ProductScrapedData
 from app.services.providers.factory import get_price_provider_for_url
 
 
@@ -86,3 +87,40 @@ def test_lazada_login_page_is_classified_as_session_expired(monkeypatch):
 
     assert data.success is False
     assert data.error_code == "SESSION_EXPIRED"
+
+
+def test_lazada_prefers_session_aware_dynamic_price_over_static_html(monkeypatch):
+    """The signed-in PDP price must win when static HTML exposes a base price."""
+    provider = LazadaPriceProvider()
+    product_url = "https://www.lazada.vn/products/test-product-i123.html"
+
+    async def static_product_page(_url):
+        return "<html><head><title>Test product</title></head><body>product</body></html>"
+
+    static_data = ProductScrapedData(
+        name="Test product",
+        price=1_567_000,
+        original_price=1_900_000,
+        url=product_url,
+    )
+    dynamic_data = ProductScrapedData(
+        name="Test product",
+        price=820_350,
+        original_price=1_567_000,
+        url=product_url,
+    )
+
+    monkeypatch.setattr(provider, "_fetch_html", static_product_page)
+    monkeypatch.setattr(provider, "_parse_html", lambda _html, _url: static_data)
+    monkeypatch.setattr(provider, "_has_saved_browser_session", lambda: True)
+
+    async def dynamic_product_page(_url, _sku):
+        return dynamic_data
+
+    monkeypatch.setattr(provider, "_fetch_with_playwright", dynamic_product_page)
+
+    data = asyncio.run(provider.get_product_info(product_url, use_cache=False))
+
+    assert data.success is True
+    assert data.price == 820_350
+    assert data.original_price == 1_567_000
