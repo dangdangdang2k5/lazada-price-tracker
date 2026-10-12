@@ -29,3 +29,14 @@ def test_normalize_lazada_url():
     url_with_tracking = "https://www.lazada.vn/products/logitech-g-pro-i123.html?spm=a2o4n.home&clickTrackInfo=abc123xyz"
     normalized = normalize_lazada_url(url_with_tracking)
     assert normalized == "https://www.lazada.vn/products/logitech-g-pro-i123.html"
+
+
+def test_normalize_lazada_url_removes_expiring_share_tokens_but_keeps_sku_path():
+    shared_url = (
+        "https://www.lazada.vn/products/aula-f75-i3300646509-s16055633476.html"
+        "?tradePath=omItm&laz_token=expired-token&exlaz=signature&sub_id2=123#reviews"
+    )
+
+    normalized = normalize_lazada_url(shared_url)
+
+    assert normalized == "https://www.lazada.vn/products/aula-f75-i3300646509-s16055633476.html"

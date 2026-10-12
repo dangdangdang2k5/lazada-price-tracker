@@ -36,20 +36,25 @@ def is_valid_lazada_url(url: str) -> bool:
 
 def normalize_lazada_url(url: str) -> str:
     """
-    Clean tracking queries from Lazada URL while preserving essential share tokens.
+    Return a stable product URL without volatile Lazada share/tracking tokens.
+
+    Product identity (including a selected SKU) is encoded in the path as
+    ``-i<item>-s<sku>.html``. Query parameters such as ``laz_token`` and
+    ``exlaz`` belong to a share link and can expire or cause a redirect to a
+    login/challenge page when reused by a crawler.
     """
     if not url or not isinstance(url, str):
         return ""
     url = url.strip().rstrip(".")
     try:
         parsed = urlparse(url)
-        # For short link domain s.lazada.vn, preserve full URL including query params
+        # A short URL cannot be canonicalised until the redirect bridge is
+        # fetched, so preserve it for the resolver in the provider.
         if "s.lazada" in parsed.netloc:
             return url
-        # If URL contains legitimate share tokens, preserve them to avoid anti-bot trigger
-        if "laz_token" in parsed.query or "laz_share_info" in parsed.query:
-            return url
-        # Otherwise keep clean canonical URL
+        # Full PDP URLs work from their pathname alone. Drop every query key,
+        # rather than maintaining an unreliable allow/deny list of changing
+        # Lazada share parameters.
         return urlunparse((parsed.scheme or "https", parsed.netloc, parsed.path, "", "", ""))
     except Exception:
         return url
