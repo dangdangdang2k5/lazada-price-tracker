@@ -1,4 +1,5 @@
 import asyncio
+import json
 import pytest
 from app.services.providers.lazada import LazadaPriceProvider
 from app.services.providers.base import ProductScrapedData
@@ -154,3 +155,31 @@ def test_lazada_does_not_accept_static_price_when_dynamic_session_price_is_unava
     assert data.success is False
     assert data.price == 0
     assert data.error_code == "PRICE_EXTRACTION_FAILED"
+
+
+def test_lazada_mtop_uses_price_for_url_sku_not_first_catalog_variation():
+    provider = LazadaPriceProvider()
+    product_url = "https://www.lazada.vn/products/test-product-i3300646509-s16055633476.html"
+    module = {
+        "product": {"title": "Test keyboard"},
+        "productOption": {
+            "skuBase": {
+                "skus": [
+                    {"skuId": "other", "propPath": ""},
+                    {"skuId": "16055633476", "propPath": ""},
+                ],
+                "properties": [],
+            }
+        },
+        "skuInfos": {
+            "other": {"price": {"salePrice": {"value": 1_567_000}}},
+            "16055633476": {"price": {"coupon": {"priceNumber": 823_950}, "salePrice": {"value": 1_567_000}}},
+        },
+    }
+    payload = json.dumps({"data": {"module": json.dumps(module)}})
+
+    data = provider._parse_mtop_detail(payload, product_url, "16055633476")
+
+    assert data is not None
+    assert data.sku_id == "16055633476"
+    assert data.price == 823_950

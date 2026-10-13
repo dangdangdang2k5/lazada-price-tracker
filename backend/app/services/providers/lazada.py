@@ -422,12 +422,7 @@ class LazadaPriceProvider(BasePriceProvider):
         except ImportError:
             return None
 
-        # Extract Item ID if present in the URL
-        m_item = re.search(r'-i(\d+)', url) or re.search(r'i(\d+)', url)
-        item_id = m_item.group(1) if m_item else None
-
         captured_mtop: Optional[str] = None
-        captured_catalog_json: Optional[Dict[str, Any]] = None
         page_title: Optional[str] = None
 
         async with async_playwright() as p:
@@ -516,17 +511,8 @@ class LazadaPriceProvider(BasePriceProvider):
             mtop_event = asyncio.Event()
 
             async def on_response(response):
-                nonlocal captured_catalog_json
                 req_url = response.url.lower()
-                if "catalog" in req_url and "ajax=true" in req_url:
-                    try:
-                        data = await response.json()
-                        if data and "mods" in data:
-                            captured_catalog_json = data
-                            mtop_event.set()
-                    except Exception:
-                        pass
-                elif "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
+                if "getdetailinfo" in req_url or ("mtop" in req_url and "detail" in req_url):
                     try:
                         text = await response.text()
                         if "skuInfos" in text or "module" in text:
@@ -537,36 +523,22 @@ class LazadaPriceProvider(BasePriceProvider):
 
             page.on("response", on_response)
 
-            # High-priority bypass strategy: Query Lazada Catalog via Item ID
-            # This completely avoids Alibaba sufei-punish WAF while delivering accurate sale & promo prices
-            if item_id:
-                search_url = f"https://www.lazada.vn/catalog/?q={item_id}"
+            # Catalog search returns an item-level price and does not reliably
+            # preserve the SKU or signed-in promotions. Never use it for a
+            # tracked price. PDP/MTOP is the only authoritative source here.
+            try:
+                await page.goto(url, wait_until="commit", timeout=20000)
                 try:
-                    await page.goto(search_url, wait_until="commit", timeout=20000)
-                    try:
-                        await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
-                    except asyncio.TimeoutError:
-                        pass
-                except Exception as e:
-                    logger.warning(f"[PW] Catalog search error for {item_id}: {e}")
-
-            # Always visit the PDP as well. Catalog prices are item-level and
-            # can be wrong for the selected SKU; PDP/MTOP is authoritative.
-            if not captured_list:
-                try:
-                    mtop_event.clear()
-                    await page.goto(url, wait_until="commit", timeout=20000)
-                    try:
-                        await page.wait_for_load_state("domcontentloaded", timeout=10000)
-                    except Exception:
-                        pass
-                    await page.evaluate("window.scrollBy(0, 300)")
-                    try:
-                        await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
-                    except asyncio.TimeoutError:
-                        pass
+                    await page.wait_for_load_state("domcontentloaded", timeout=10000)
                 except Exception:
                     pass
+                await page.evaluate("window.scrollBy(0, 300)")
+                try:
+                    await asyncio.wait_for(mtop_event.wait(), timeout=6.0)
+                except asyncio.TimeoutError:
+                    pass
+            except Exception as exc:
+                logger.warning(f"[PW] PDP navigation failed: {type(exc).__name__}")
 
             if captured_list:
                 captured_mtop = captured_list[0]
@@ -585,46 +557,7 @@ class LazadaPriceProvider(BasePriceProvider):
                 logger.info(f"[PW] Dynamic MTOP parsed successfully: {parsed.price} VND (Orig: {parsed.original_price})")
                 return parsed
 
-        # Priority 2: Parse Catalog Search AJAX JSON (Resilient & fast)
-        if captured_catalog_json:
-            mods = captured_catalog_json.get("mods", {})
-            list_items = mods.get("listItems", [])
-            for it in list_items:
-                if not item_id or str(it.get("itemId")) == str(item_id) or len(list_items) == 1:
-                    price_val = 0
-                    raw_price = it.get("price")
-                    if raw_price:
-                        try:
-                            price_val = int(float(raw_price))
-                        except Exception:
-                            pass
-                    if price_val <= 0 and it.get("priceShow"):
-                        price_val = parse_currency(it.get("priceShow")) or 0
-
-                    orig_val = None
-                    raw_orig = it.get("originalPrice")
-                    if raw_orig:
-                        try:
-                            orig_val = int(float(raw_orig))
-                            if orig_val <= price_val:
-                                orig_val = None
-                        except Exception:
-                            pass
-
-                    if price_val > 0:
-                        prod_name = it.get("name") or page_title or "Lazada Product"
-                        logger.info(f"[PW] Catalog AJAX parsed successfully: {prod_name[:40]} -> {price_val} VND")
-                        return ProductScrapedData(
-                            name=prod_name,
-                            price=price_val,
-                            original_price=orig_val,
-                            image_url=it.get("image"),
-                            sku_id=target_sku_id,
-                            url=url,
-                            success=True
-                        )
-
-        logger.warning(f"[PW] No dynamic mtop or catalog price captured for {url}")
+        logger.warning(f"[PW] No PDP/MTOP price captured for {url}")
         return None
 
     def _parse_mtop_detail(self, mtop_text: str, url: str, target_sku_id: Optional[str], fallback_title: Optional[str] = None) -> Optional[ProductScrapedData]:
