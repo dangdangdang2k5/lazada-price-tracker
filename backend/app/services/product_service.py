@@ -14,10 +14,10 @@ from app.schemas.product import (
     ProductPreviewResponse,
 )
 from app.schemas.alert import AlertCreateInput, AlertResponse
-from app.services.providers.factory import get_price_provider_for_url
 from app.services.alert_engine import AlertEngine
 from app.services.telegram_service import telegram_service
 from app.services.lazada_session_health import session_health
+from app.services.lazada_cookie_manager import cookie_manager
 from app.utils.currency import format_currency
 from app.utils.validators import normalize_lazada_url, is_valid_lazada_url
 
@@ -45,8 +45,8 @@ class ProductService:
                 error_message="URL không phải đường dẫn sản phẩm Lazada hợp lệ."
             )
 
-        provider = get_price_provider_for_url(canonical_url)
-        scraped = await provider.get_product_info(canonical_url)
+        outcome = await cookie_manager.fetch_product(canonical_url)
+        scraped = outcome.data
         if not scraped.success or scraped.price <= 0:
             return ProductPreviewResponse(
                 name=scraped.name or "Sản phẩm Lazada",
@@ -93,8 +93,8 @@ class ProductService:
 
         # If price or name missing, fetch via provider
         if not price or price <= 0 or not name:
-            provider = get_price_provider_for_url(canonical_url)
-            scraped = await provider.get_product_info(canonical_url)
+            outcome = await cookie_manager.fetch_product(canonical_url)
+            scraped = outcome.data
             if not scraped.success or scraped.price <= 0:
                 raise ValueError(scraped.error_message or "Không thể lấy thông tin sản phẩm từ URL này.")
             name = scraped.name
@@ -204,8 +204,15 @@ class ProductService:
         if not product:
             return None
 
-        provider = get_price_provider_for_url(product.url)
-        scraped = await provider.get_product_info(product.url)
+        outcome = await cookie_manager.fetch_product(product.url)
+        scraped = outcome.data
+
+        if outcome.notify_all_invalid and telegram_service.is_configured():
+            await telegram_service.send_message(
+                "⚠️ <b>Tất cả Cookie Lazada cần được cập nhật</b>\n\n"
+                "Các profile đã được xác nhận hết phiên đăng nhập. Tracker đã tạm dừng các yêu cầu cần session "
+                "và sẽ không tự retry liên tục. Hãy cập nhật một cookie hợp lệ rồi chạy /check."
+            )
 
         if not scraped.success or scraped.price <= 0:
             health_update = session_health.observe_failure(scraped.error_code, scraped.error_message)

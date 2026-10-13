@@ -4,6 +4,7 @@ from app.core.logging import logger
 from app.core.database import AsyncSessionLocal
 from app.repositories.product_repo import ProductRepository
 from app.services.product_service import ProductService
+from app.services.lazada_cookie_manager import cookie_manager
 
 # Concurrency lock to prevent overlapping check jobs
 _is_checking = False
@@ -28,6 +29,9 @@ async def check_all_products_job() -> bool:
     logger.info("[SCHEDULER] Starting periodic price check for all active products...")
 
     try:
+        if await cookie_manager.is_paused():
+            logger.warning("[SCHEDULER] Lazada session requests are paused until a valid cookie profile is updated.")
+            return True
         async with AsyncSessionLocal() as session:
             try:
                 repo = ProductRepository(session)

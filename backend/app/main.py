@@ -10,6 +10,7 @@ from app.core.database import init_db, AsyncSessionLocal
 from app.core.logging import logger
 from app.jobs.scheduler import start_scheduler, shutdown_scheduler
 from app.services.telegram_command_bot import telegram_command_bot
+from app.services.lazada_cookie_manager import cookie_manager
 from app.api import api_router
 
 
@@ -72,6 +73,7 @@ async def auto_seed_products():
 async def lifespan(app: FastAPI):
     logger.info("Initializing application and database schemas...")
     await init_db()
+    await cookie_manager.bootstrap()
     await auto_seed_products()
     logger.info("Starting background scheduler...")
     start_scheduler()

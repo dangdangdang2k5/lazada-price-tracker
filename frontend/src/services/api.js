@@ -114,6 +114,11 @@ export const lazadaSessionService = {
   status: async () => (await api.get('/lazada/session')).data,
   save: async (cookies) => (await api.post('/lazada/session', { cookies })).data,
   clear: async () => (await api.delete('/lazada/session')).data,
+  listProfiles: async () => (await api.get('/lazada/cookies')).data,
+  addProfile: async (label, cookies) => (await api.post('/lazada/cookies', { label, cookies })).data,
+  activateProfile: async (id) => (await api.post(`/lazada/cookies/${id}/activate`)).data,
+  reorderProfiles: async (profileIds) => (await api.put('/lazada/cookies/priorities', { profile_ids: profileIds })).data,
+  deleteProfile: async (id) => (await api.delete(`/lazada/cookies/${id}`)).data,
 };
 
 export default api;

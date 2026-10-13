@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./lazada_tracker.db"
     # Keep deployment data outside the source tree on a VPS.
     LAZADA_COOKIE_FILE: str = "cache/lazada_cookies.json"
+    # Optional directory for additional user-managed cookie profiles. When
+    # empty, profiles live next to LAZADA_COOKIE_FILE in a private subfolder.
+    LAZADA_COOKIE_PROFILES_DIR: str = ""
     LAZADA_DEBUG_DIR: str = "debug/lazada"
     # Empty means a sidecar JSON file next to LAZADA_COOKIE_FILE.
     LAZADA_SESSION_HEALTH_FILE: str = ""

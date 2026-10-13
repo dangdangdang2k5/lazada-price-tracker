@@ -18,7 +18,7 @@ from app.jobs.price_checker import check_all_products_job, is_price_check_runnin
 from app.jobs.scheduler import scheduler
 from app.models.product import Product
 from app.services.lazada_session_health import SESSION_RELATED_ERRORS, session_health
-from app.services.providers.factory import get_price_provider_for_url
+from app.services.lazada_cookie_manager import cookie_manager
 from app.services.telegram_service import telegram_service
 from app.utils.currency import format_currency
 
@@ -228,8 +228,15 @@ class TelegramCommandBot:
             return
 
         await telegram_service.send_message("🔎 Đang xác thực session Lazada bằng dữ liệu sản phẩm thật…", reply_markup=COMMAND_KEYBOARD)
-        provider = get_price_provider_for_url(product.url)
-        scraped = await provider.get_product_info(product.url, use_cache=False)
+        fetch_outcome = await cookie_manager.fetch_product(product.url, use_cache=False)
+        scraped = fetch_outcome.data
+        if fetch_outcome.notify_all_invalid:
+            await telegram_service.send_message(
+                "⚠️ <b>Tất cả Cookie Lazada cần được cập nhật</b>\n\n"
+                "Tracker đã tạm dừng các yêu cầu cần session và sẽ không tự retry liên tục. "
+                "Hãy cập nhật một cookie hợp lệ rồi chạy /check.",
+                reply_markup=COMMAND_KEYBOARD,
+            )
         if scraped.success and scraped.price > 0:
             session_health.observe_success()
             verdict = "✅ <b>Đã xác thực: dùng được</b>\nLazada trả dữ liệu sản phẩm thật."
@@ -313,7 +320,7 @@ class TelegramCommandBot:
             return
 
         try:
-            self._save_cookies(cookies)
+            await self._save_cookies(cookies)
         except OSError as exc:
             logger.error(f"[TELEGRAM BOT] Could not save cookie file: {type(exc).__name__}")
             await telegram_service.send_message("❌ Không thể lưu cookie tại VPS. Hãy kiểm tra quyền thư mục secrets.", reply_markup=COMMAND_KEYBOARD)
@@ -356,12 +363,8 @@ class TelegramCommandBot:
         return expired
 
     @staticmethod
-    def _save_cookies(cookies: list[dict[str, Any]]) -> None:
-        cookie_file = Path(settings.LAZADA_COOKIE_FILE).expanduser()
-        cookie_file.parent.mkdir(parents=True, exist_ok=True)
-        temp_file = cookie_file.with_suffix(cookie_file.suffix + ".tmp")
-        temp_file.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp_file.replace(cookie_file)
+    async def _save_cookies(cookies: list[dict[str, Any]]) -> None:
+        await cookie_manager.replace_active(cookies)
         # Allow the next anti-bot failure to raise one actionable alert if this new session is invalid.
         from app.services.product_service import reset_lazada_session_alert
         reset_lazada_session_alert()
