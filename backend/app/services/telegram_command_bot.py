@@ -24,7 +24,7 @@ from app.utils.currency import format_currency
 
 
 COMMAND_KEYBOARD = {
-    "keyboard": [["/status", "/check"], ["/products", "/session"], ["/cookie", "/help"]],
+    "keyboard": [["/status", "/check"], ["/products", "/session"], ["/ip", "/cookie"], ["/help"]],
     "resize_keyboard": True,
     "is_persistent": True,
 }
@@ -169,6 +169,7 @@ class TelegramCommandBot:
             "/seasion": self._send_session_status,
             "/products": self._send_products,
             "/check": self._start_price_check,
+            "/ip": self._send_public_ip,
             "/cookie": self._request_cookie_upload,
         }
         handler = handlers.get(command)
@@ -184,6 +185,7 @@ class TelegramCommandBot:
             "/check — quét giá ngay (không chạy trùng)\n"
             "/products — danh sách sản phẩm đang theo dõi\n"
             "/session — tình trạng cookie Lazada\n"
+            "/ip — IP public hiện tại của VPS\n"
             "/cookie — gửi file JSON cookie mới",
             reply_markup=COMMAND_KEYBOARD,
         )
@@ -386,6 +388,37 @@ class TelegramCommandBot:
             text = "\n".join(lines)
         await telegram_service.send_message(text, reply_markup=COMMAND_KEYBOARD)
 
+    async def _send_public_ip(self) -> None:
+        """Return the current outbound public IP without exposing any credentials."""
+        ip_address = await self._resolve_public_ip()
+        if ip_address:
+            text = f"🌐 <b>IP public hiện tại của VPS</b>\n\n<code>{html.escape(ip_address)}</code>"
+        else:
+            text = "⚠️ Không lấy được IP public của VPS lúc này. Hãy thử lại sau."
+        await telegram_service.send_message(text, reply_markup=COMMAND_KEYBOARD)
+
+    @staticmethod
+    async def _resolve_public_ip() -> Optional[str]:
+        """Resolve the instance's outbound address with short, independent fallbacks."""
+        endpoints = (
+            "https://api.ipify.org?format=json",
+            "https://checkip.amazonaws.com",
+        )
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for endpoint in endpoints:
+                try:
+                    response = await client.get(endpoint)
+                    response.raise_for_status()
+                    if endpoint.endswith("format=json"):
+                        value = response.json().get("ip", "")
+                    else:
+                        value = response.text.strip()
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                except (httpx.HTTPError, ValueError, TypeError):
+                    continue
+        return None
+
     async def _start_price_check(self) -> None:
         if is_price_check_running() or (self._on_demand_check_task and not self._on_demand_check_task.done()):
             await telegram_service.send_message("🟡 Một lượt quét giá đang chạy. Không khởi tạo lượt thứ hai.", reply_markup=COMMAND_KEYBOARD)
@@ -398,6 +431,7 @@ class TelegramCommandBot:
             completed = await check_all_products_job()
             if completed:
                 await telegram_service.send_message("✅ Đã quét xong danh sách sản phẩm.", reply_markup=COMMAND_KEYBOARD)
+                await self._send_products()
         except Exception as exc:
             logger.exception("[TELEGRAM BOT] On-demand price check failed")
             await telegram_service.send_message(f"❌ Quét giá thất bại: {str(exc)[:180]}", reply_markup=COMMAND_KEYBOARD)

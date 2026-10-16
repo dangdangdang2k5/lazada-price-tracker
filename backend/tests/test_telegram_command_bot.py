@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -28,3 +29,27 @@ def test_cookie_expiration_ignores_invalid_metadata():
     ]
 
     assert TelegramCommandBot._expired_cookie_count(cookies) == 1
+
+
+@pytest.mark.asyncio
+async def test_ip_command_sends_resolved_public_address(monkeypatch):
+    bot = TelegramCommandBot()
+    monkeypatch.setattr(bot, "_resolve_public_ip", AsyncMock(return_value="203.0.113.42"))
+    send_message = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.services.telegram_command_bot.telegram_service.send_message", send_message)
+
+    await bot._send_public_ip()
+
+    assert "203.0.113.42" in send_message.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_ip_command_reports_lookup_failure(monkeypatch):
+    bot = TelegramCommandBot()
+    monkeypatch.setattr(bot, "_resolve_public_ip", AsyncMock(return_value=None))
+    send_message = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.services.telegram_command_bot.telegram_service.send_message", send_message)
+
+    await bot._send_public_ip()
+
+    assert "Không lấy được IP" in send_message.call_args.args[0]
