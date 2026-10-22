@@ -18,7 +18,8 @@ def is_price_check_running() -> bool:
 async def check_all_products_job() -> bool:
     """
     Background job triggered periodically by APScheduler.
-    Iterates through all active products and performs price refresh & alert triggers.
+    Iterates through all active products and performs price refresh & alert triggers
+    concurrently using asyncio.Semaphore(5) and asyncio.gather with polite jitter (0.5s - 1.5s).
     """
     global _is_checking
     if _is_checking:
@@ -32,32 +33,44 @@ async def check_all_products_job() -> bool:
         if await cookie_manager.is_paused():
             logger.warning("[SCHEDULER] Lazada session requests are paused until a valid cookie profile is updated.")
             return True
-        async with AsyncSessionLocal() as session:
-            try:
-                repo = ProductRepository(session)
-                active_products = await repo.get_all_active()
-                logger.info(f"[SCHEDULER] Found {len(active_products)} active products to check.")
 
-                # Shuffle products order to avoid repetitive crawling patterns
-                product_list = list(active_products)
-                random.shuffle(product_list)
+        # Fetch all active products
+        async with AsyncSessionLocal() as init_session:
+            repo = ProductRepository(init_session)
+            active_products = await repo.get_all_active()
+            product_list = list(active_products)
 
-                service = ProductService(session)
-                for product in product_list:
+        if not product_list:
+            logger.info("[SCHEDULER] No active products found to check.")
+            return True
+
+        logger.info(f"[SCHEDULER] Found {len(product_list)} active products to check (Concurrency: Semaphore=5).")
+        random.shuffle(product_list)
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def check_single_product(prod_id: int, prod_name: str) -> None:
+            async with semaphore:
+                # Polite random delay between 0.5s and 1.5s to avoid bursts
+                jitter = round(random.uniform(0.5, 1.5), 2)
+                await asyncio.sleep(jitter)
+
+                # Isolated DB session per concurrent task
+                async with AsyncSessionLocal() as session:
                     try:
-                        logger.info(f"[SCHEDULER] Checking price for product ID {product.id} - '{product.name[:30]}'")
-                        await service.refresh_product_price(product.id)
-                        
-                        # Random polite delay between 2.0s and 4.0s to avoid bot detection/rate limit
-                        delay = round(random.uniform(2.0, 4.0), 2)
-                        await asyncio.sleep(delay)
+                        logger.info(f"[SCHEDULER] Checking price for product ID {prod_id} - '{prod_name[:30]}'")
+                        service = ProductService(session)
+                        await service.refresh_product_price(prod_id)
+                        await session.commit()
                     except Exception as prod_err:
-                        logger.error(f"[SCHEDULER ERROR] Failed checking product ID {product.id}: {str(prod_err)}")
+                        await session.rollback()
+                        logger.error(f"[SCHEDULER ERROR] Failed checking product ID {prod_id}: {str(prod_err)}")
 
-                await session.commit()
-            except Exception as db_err:
-                await session.rollback()
-                logger.error(f"[SCHEDULER DATABASE ERROR] {str(db_err)}")
+        tasks = [check_single_product(p.id, p.name) for p in product_list]
+        await asyncio.gather(*tasks)
+
+    except Exception as db_err:
+        logger.error(f"[SCHEDULER DATABASE ERROR] {str(db_err)}")
     finally:
         _is_checking = False
         logger.info("[SCHEDULER] Periodic price check completed.")

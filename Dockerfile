@@ -6,7 +6,7 @@ RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python Backend with FastAPI & Playwright Chromium
+# Stage 2: Python Backend with FastAPI & High-Performance MTOP Direct API
 FROM python:3.11-slim
 WORKDIR /app
 
@@ -16,8 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source code & products data
 COPY backend/ .

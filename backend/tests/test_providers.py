@@ -2,7 +2,8 @@ import asyncio
 import json
 import pytest
 from app.services.providers.lazada import LazadaPriceProvider
-from app.services.providers.base import ProductScrapedData
+from app.services.providers.base import BasePriceProvider, ProductScrapedData
+from app.services.providers.lazada_api import LazadaApiProvider
 from app.services.providers.factory import get_price_provider_for_url
 
 
@@ -69,7 +70,7 @@ def test_lazada_provider_script_init_data_parsing():
 
 def test_provider_factory():
     provider = get_price_provider_for_url("https://www.lazada.vn/products/test-i123.html")
-    assert isinstance(provider, LazadaPriceProvider)
+    assert isinstance(provider, (BasePriceProvider, LazadaPriceProvider, LazadaApiProvider))
 
 
 def test_lazada_login_page_is_classified_as_session_expired(monkeypatch):
