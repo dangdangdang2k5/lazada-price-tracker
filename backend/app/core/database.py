@@ -46,7 +46,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """
-    Initialize database tables on application startup.
+    Initialize database tables on application startup and auto-migrate missing columns.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -55,3 +55,9 @@ async def init_db() -> None:
             columns = {row[1] for row in result.fetchall()}
             if "category" not in columns:
                 await conn.exec_driver_sql("ALTER TABLE products ADD COLUMN category VARCHAR(100)")
+            if "note" not in columns:
+                await conn.exec_driver_sql("ALTER TABLE products ADD COLUMN note TEXT")
+            if "sku_id" not in columns:
+                await conn.exec_driver_sql("ALTER TABLE products ADD COLUMN sku_id VARCHAR(100)")
+            if "sku_name" not in columns:
+                await conn.exec_driver_sql("ALTER TABLE products ADD COLUMN sku_name VARCHAR(255)")

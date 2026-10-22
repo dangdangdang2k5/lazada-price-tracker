@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .pytest_cache/
 debug/lazada/
+cache/
 backend/cache/lazada_cookies.json
 backend/cache/browser_profile/
 backend/cache/

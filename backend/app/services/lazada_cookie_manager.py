@@ -231,14 +231,18 @@ class LazadaCookieManager:
                 state = await self._get_state(session)
                 active_profile_id = state.active_profile_id
                 paused = state.paused
-            if paused or not active_profile_id:
+            if paused:
                 return CookieFetchOutcome(
                     data=ProductScrapedData(name="Lazada product", price=0, url=url, success=False,
                                              error_code=SESSION_EXPIRED,
-                                             error_message="No valid Lazada cookie profile is available"),
+                                             error_message="Lazada session is paused"),
                     active_profile_id=active_profile_id,
                     all_profiles_invalid=True,
                 )
+            if not active_profile_id:
+                provider = get_price_provider_for_url(url)
+                data = await provider.get_product_info(url, use_cache=use_cache if attempts == 0 else False)
+                return CookieFetchOutcome(data=data, active_profile_id=None, switched_profile=False)
 
             provider = get_price_provider_for_url(url)
             data = await provider.get_product_info(url, use_cache=use_cache if attempts == 0 else False)

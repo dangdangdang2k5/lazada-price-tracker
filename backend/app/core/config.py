@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "Lazada Price Tracker"
     DEBUG: bool = True
+    PRICE_PROVIDER_MODE: str = "api"  # "api" (direct MTOP mobile gateway) or "scraper" (Playwright/HTML)
     LAZADA_DEBUG: bool = False
     DATABASE_URL: str = "sqlite+aiosqlite:///./lazada_tracker.db"
     # Keep deployment data outside the source tree on a VPS.
