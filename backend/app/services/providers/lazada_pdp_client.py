@@ -64,32 +64,8 @@ class LazadaPdpClient:
     @staticmethod
     def extract_item_and_sku_id(url: str) -> Tuple[Optional[str], Optional[str]]:
         """Extract itemId and skuId from URL pathname or query parameters."""
-        if not url:
-            return None, None
-
-        item_id: Optional[str] = None
-        sku_id: Optional[str] = None
-
-        m_item = re.search(r"-i(\d+)", url)
-        if m_item:
-            item_id = m_item.group(1)
-
-        m_sku = re.search(r"-s(\d+)", url)
-        if m_sku:
-            sku_id = m_sku.group(1)
-
-        if not item_id or not sku_id:
-            try:
-                parsed = urlparse(url)
-                params = parse_qs(parsed.query)
-                if not item_id and "itemId" in params and params["itemId"]:
-                    item_id = params["itemId"][0]
-                if not sku_id and "skuId" in params and params["skuId"]:
-                    sku_id = params["skuId"][0]
-            except Exception:
-                pass
-
-        return item_id, sku_id
+        from app.utils.validators import extract_item_and_sku_id as _extract
+        return _extract(url)
 
     @staticmethod
     def load_session_cookies() -> Dict[str, str]:
@@ -257,8 +233,8 @@ class LazadaPdpClient:
                         self._persist_session_cookies(dict(resp.cookies))
 
                     candidate = str(resp.url)
-                    if "products" in candidate and "-i" in candidate:
-                        resolved_url = candidate
+                    if "products" in candidate and re.search(r"(?:[?&/_-]i|^i)\d+", candidate):
+                        resolved_url = re.sub(r"(?<!:)//+", "/", candidate)
                         pdp_html = resp.text or ""
                     else:
                         html = resp.text or ""
@@ -272,6 +248,7 @@ class LazadaPdpClient:
                 except Exception as e:
                     logger.warning(f"Error unshortening link {url}: {e}")
 
+            resolved_url = re.sub(r"(?<!:)//+", "/", resolved_url)
             logger.info(f"Fetching fresh PDP snapshot {resolved_url}")
 
             if not pdp_html:
@@ -301,7 +278,8 @@ class LazadaPdpClient:
 
             # 2. MTOP Real-time Promotional Price Enrichment with Auto-Retry (Max 2 retries)
             parsed_path = urlparse(resolved_url).path
-            uri_slug = parsed_path.strip("/").replace(".html", "") or f"products/i{item_id}"
+            clean_path = re.sub(r"/+", "/", parsed_path.strip("/")).replace(".html", "")
+            uri_slug = clean_path or f"products/i{item_id}"
 
             data_dict = {
                 "deviceType": "pc",

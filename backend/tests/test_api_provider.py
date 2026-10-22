@@ -36,6 +36,16 @@ def test_extract_item_and_sku_id():
     assert item4 is None
     assert sku4 is None
 
+    # Slugless and double-slash URL
+    url5 = "https://www.lazada.vn//products/i3276673627-s15829337083.html"
+    item5, sku5 = LazadaApiProvider.extract_item_and_sku_id(url5)
+    assert item5 == "3276673627"
+    assert sku5 == "15829337083"
+
+    pdp_item, pdp_sku = LazadaPdpClient.extract_item_and_sku_id(url5)
+    assert pdp_item == "3276673627"
+    assert pdp_sku == "15829337083" 
+
 
 def test_parse_mtop_response():
     """Verify parsing logic on mocked MTOP response JSON."""
@@ -148,6 +158,25 @@ async def test_live_mtop_api_fetch():
     assert "AULA" in result.name or "Bàn Phím" in result.name or "F75" in result.name
     assert len(result.variations) > 0
     assert result.image_url is not None and result.image_url.startswith("http")
+
+
+@pytest.mark.asyncio
+async def test_live_slugless_and_double_slash_url_fetch():
+    """
+    Verify that AuthenticatedLazadaPriceProvider and LazadaPdpClient handle slugless URLs
+    with consecutive slashes, e.g. https://www.lazada.vn//products/i3276673627-s15829337083.html.
+    """
+    provider = AuthenticatedLazadaPriceProvider()
+    url = "https://www.lazada.vn//products/i3276673627-s15829337083.html"
+
+    result = await provider.get_product_info(url, use_cache=False)
+
+    assert result is not None
+    assert result.success is True
+    assert result.sku_id == "15829337083"
+    assert result.price > 0
+    assert "AULA" in result.name or "WiN60" in result.name
+    assert len(result.variations) > 0
 
 
 def test_cookie_persistence_updates_file(tmp_path, monkeypatch):

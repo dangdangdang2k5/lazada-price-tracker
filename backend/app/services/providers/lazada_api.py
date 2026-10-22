@@ -44,41 +44,9 @@ class LazadaApiProvider(BasePriceProvider):
 
     @staticmethod
     def extract_item_and_sku_id(url: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Extract itemId and skuId from standard or mobile Lazada product URLs.
-        Examples:
-            - https://www.lazada.vn/products/product-name-i3300646509-s16055633476.html -> ('3300646509', '16055633476')
-            - https://www.lazada.vn/products/product-name-i3300646509.html -> ('3300646509', None)
-            - https://www.lazada.vn/products/?itemId=3300646509&skuId=16055633476 -> ('3300646509', '16055633476')
-        """
-        if not url:
-            return None, None
-
-        item_id: Optional[str] = None
-        sku_id: Optional[str] = None
-
-        # 1. Path-based pattern (-i{itemId}-s{skuId}.html or -i{itemId}.html)
-        item_match = re.search(r"-i(\d+)", url)
-        if item_match:
-            item_id = item_match.group(1)
-
-        sku_match = re.search(r"-s(\d+)", url)
-        if sku_match:
-            sku_id = sku_match.group(1)
-
-        # 2. Query param fallback (?itemId=...&skuId=...)
-        if not item_id or not sku_id:
-            try:
-                parsed = urlparse(url)
-                params = parse_qs(parsed.query)
-                if not item_id and "itemId" in params and params["itemId"]:
-                    item_id = params["itemId"][0]
-                if not sku_id and "skuId" in params and params["skuId"]:
-                    sku_id = params["skuId"][0]
-            except Exception:
-                pass
-
-        return item_id, sku_id
+        """Extract itemId and skuId from standard or mobile Lazada product URLs."""
+        from app.utils.validators import extract_item_and_sku_id as _extract
+        return _extract(url)
 
     async def resolve_short_url(self, short_url: str) -> str:
         """
@@ -98,7 +66,7 @@ class LazadaApiProvider(BasePriceProvider):
                 resp = await client.get(short_url, headers=headers)
                 resolved_url = str(resp.url)
 
-                if "products" in resolved_url and "-i" in resolved_url:
+                if "products" in resolved_url and re.search(r"(?:[?&/_-]i|^i)\d+", resolved_url):
                     return normalize_lazada_url(resolved_url)
 
                 # Look for JS redirects or meta canonical links in body
